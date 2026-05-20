@@ -1,0 +1,88 @@
+{
+  "name": "up-project4agents",
+  "description": "Project management API voor AI agents — Kanban board, issues, comments, GitHub integratie",
+  "version": "0.1.0",
+  "baseUrl": "http://localhost:3400/api",
+  "tools": [
+    {
+      "name": "list_projects",
+      "description": "Lijst alle projecten op",
+      "endpoint": "GET /projects"
+    },
+    {
+      "name": "create_project",
+      "description": "Maak een nieuw project aan",
+      "endpoint": "POST /projects",
+      "parameters": {
+        "name": { "type": "string", "required": true, "description": "Naam van het project" },
+        "description": { "type": "string", "description": "Beschrijving" },
+        "color": { "type": "string", "description": "Hex kleurcode, bijv. #8B5CF6" }
+      }
+    },
+    {
+      "name": "list_issues",
+      "description": "Lijst issues, optioneel gefilterd op project, status of prioriteit",
+      "endpoint": "GET /issues",
+      "parameters": {
+        "project_id": { "type": "string", "description": "Filter op project ID" },
+        "status": { "type": "string", "enum": ["backlog", "planned", "in_progress", "done", "cancelled"] },
+        "priority": { "type": "string", "enum": ["none", "low", "medium", "high", "urgent"] },
+        "search": { "type": "string", "description": "Zoek in titel en beschrijving" }
+      }
+    },
+    {
+      "name": "get_issue",
+      "description": "Haal één issue op via ID of identifier (bijv. UP-42)",
+      "endpoint": "GET /issues?id={id}",
+      "parameters": {
+        "id": { "type": "string", "required": true, "description": "Issue ID of identifier" }
+      }
+    },
+    {
+      "name": "create_issue",
+      "description": "Maak een nieuwe issue/taak aan",
+      "endpoint": "POST /issues",
+      "parameters": {
+        "project_id": { "type": "string", "required": true },
+        "title": { "type": "string", "required": true },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["backlog", "planned", "in_progress", "done"] },
+        "priority": { "type": "string", "enum": ["none", "low", "medium", "high", "urgent"] },
+        "labels": { "type": "array", "items": { "type": "string" } },
+        "acceptance_criteria": { "type": "string" },
+        "github_branch": { "type": "string" }
+      }
+    },
+    {
+      "name": "update_issue",
+      "description": "Werk een issue bij — status, prioriteit, beschrijving, etc.",
+      "endpoint": "PATCH /issues?id={id}",
+      "parameters": {
+        "id": { "type": "string", "required": true },
+        "status": { "type": "string" },
+        "priority": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "labels": { "type": "array" },
+        "acceptance_criteria": { "type": "string" },
+        "github_branch": { "type": "string" },
+        "github_pr_url": { "type": "string" }
+      }
+    },
+    {
+      "name": "add_comment",
+      "description": "Voeg een comment/activiteit toe aan een issue",
+      "endpoint": "POST /comments",
+      "parameters": {
+        "issue_id": { "type": "string", "required": true },
+        "author": { "type": "string", "description": "user of agent" },
+        "body": { "type": "string", "required": true }
+      }
+    },
+    {
+      "name": "get_stats",
+      "description": "Haal statistieken op: totaal issues, per status, per prioriteit",
+      "endpoint": "GET /stats"
+    }
+  ]
+}
