@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import {
   applyGithubPrEvent, parseIdentifiers, updateIssue, getIssue,
-  logActivityPublic, createComment,
+  logActivityPublic, createComment, getProject,
 } from '@/lib/db';
 
 /**
@@ -96,20 +96,42 @@ async function handlePullRequest(payload: any, sourceRepo: string | null) {
     title: pr.title || '',
     body: pr.body || '',
     merged: !!pr.merged,
+    source_repo: sourceRepo,
   });
 
-  return NextResponse.json({ ok: true, action, source_repo: sourceRepo, touched: result.touched });
+  return NextResponse.json({
+    ok: true, action, source_repo: sourceRepo,
+    touched: result.touched, skipped: result.skipped,
+  });
 }
 
 async function handlePush(payload: any, sourceRepo: string | null) {
   const ref = payload.ref || '';
   const branch = ref.replace(/^refs\/heads\//, '');
   const identifiers = parseIdentifiers(branch);
+  const strict = process.env.WEBHOOK_STRICT !== 'false';
 
   const touched: string[] = [];
+  const skipped: { identifier: string; reason: string }[] = [];
+
   for (const ident of identifiers) {
     const issue = await getIssue(ident);
     if (!issue) continue;
+
+    // Repo-validatie ook voor push events
+    const project = await getProject(issue.project_id);
+    const expected_repo = project?.github_repo?.trim() || null;
+    if (strict && expected_repo && sourceRepo && expected_repo.toLowerCase() !== sourceRepo.toLowerCase()) {
+      await logActivityPublic('repo_mismatch',
+        {
+          identifier: ident, expected_repo, actual_repo: sourceRepo, branch,
+          reason: `Push naar branch '${branch}' in '${sourceRepo}', maar ${ident} hoort bij '${expected_repo}'. Overgeslagen.`,
+        },
+        { issue_id: issue.id, project_id: issue.project_id, actor: 'github' });
+      skipped.push({ identifier: ident, reason: 'repo_mismatch' });
+      continue;
+    }
+
     if (issue.github_branch !== branch) {
       await updateIssue(issue.id, { github_branch: branch }, 'github');
     }
@@ -121,7 +143,7 @@ async function handlePush(payload: any, sourceRepo: string | null) {
     touched.push(ident);
   }
 
-  return NextResponse.json({ ok: true, branch, source_repo: sourceRepo, touched });
+  return NextResponse.json({ ok: true, branch, source_repo: sourceRepo, touched, skipped });
 }
 
 async function handleIssueComment(payload: any, sourceRepo: string | null) {

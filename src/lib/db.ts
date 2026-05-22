@@ -704,6 +704,7 @@ export async function applyGithubPrEvent(event: {
   title: string;
   body: string;
   merged?: boolean;
+  source_repo?: string | null;  // owner/repo van de webhook payload
 }) {
   const candidates = new Set<string>([
     ...parseIdentifiers(event.branch),
@@ -716,9 +717,39 @@ export async function applyGithubPrEvent(event: {
   ]);
 
   const touched: { identifier: string; new_status?: IssueStatus }[] = [];
+  const skipped: { identifier: string; reason: string; expected_repo?: string; actual_repo?: string }[] = [];
+
+  // Strict mode tenzij expliciet uitgeschakeld
+  const strict = process.env.WEBHOOK_STRICT !== 'false';
+
   for (const ident of candidates) {
     const issue = await getIssue(ident);
     if (!issue) continue;
+
+    // ─── REPO-VALIDATIE ──────────────────────────────────────────
+    // Issue → project → github_repo. Als gezet, MOET source_repo matchen.
+    // Zo niet: skip update + log waarschuwing zodat per ongeluk pushen
+    // vanuit de verkeerde repo nooit issues raakt.
+    const project = await getProject(issue.project_id);
+    const expected_repo = project?.github_repo?.trim() || null;
+    const actual_repo = event.source_repo?.trim() || null;
+
+    if (strict && expected_repo && actual_repo && expected_repo.toLowerCase() !== actual_repo.toLowerCase()) {
+      await logActivity('repo_mismatch',
+        {
+          identifier: ident,
+          expected_repo,
+          actual_repo,
+          pr_url: event.pr_url,
+          pr_number: event.pr_number,
+          branch: event.branch,
+          action: event.action,
+          reason: `Event uit '${actual_repo}' maar issue ${ident} hoort bij project ${project?.name} (repo '${expected_repo}'). Update overgeslagen voor veiligheid.`,
+        },
+        { issue_id: issue.id, project_id: issue.project_id, actor: 'github' });
+      skipped.push({ identifier: ident, reason: 'repo_mismatch', expected_repo, actual_repo });
+      continue;  // ← skip deze issue
+    }
 
     let newStatus: IssueStatus | undefined;
     if (event.action === 'opened' || event.action === 'reopened') newStatus = 'in_progress';
@@ -739,11 +770,14 @@ export async function applyGithubPrEvent(event: {
       event.action === 'review_requested' ? 'pr_review_requested' :
       event.action === 'closed' && event.merged ? 'pr_merged' :
       event.action === 'closed' ? 'pr_closed' : 'pr_linked',
-      { pr_url: event.pr_url, pr_number: event.pr_number, branch: event.branch, title: event.title, identifier: ident },
+      {
+        pr_url: event.pr_url, pr_number: event.pr_number, branch: event.branch,
+        title: event.title, identifier: ident, source_repo: actual_repo,
+      },
       { issue_id: issue.id, project_id: issue.project_id, actor: 'github' });
     touched.push({ identifier: ident, new_status: newStatus });
   }
-  return { touched };
+  return { touched, skipped };
 }
 
 // ── Stats ──

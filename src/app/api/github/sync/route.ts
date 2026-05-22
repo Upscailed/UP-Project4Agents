@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
         pr_url: pr.url, pr_number: pr.number,
         branch: pr.headRefName, title: pr.title, body: pr.body || '',
         merged: !!pr.mergedAt,
+        source_repo: repo,  // de --repo van de sync is de source
       });
       if (result.touched.length) touched.push({ pr: pr.number, ...result });
     }

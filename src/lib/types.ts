@@ -27,7 +27,8 @@ export type ActivityType =
   | 'pr_merged'
   | 'pr_closed'
   | 'linked_issue_added'
-  | 'parent_changed';
+  | 'parent_changed'
+  | 'repo_mismatch';   // GitHub event genegeerd omdat source-repo niet matcht met project.github_repo
 
 export type Plan = 'free' | 'plus' | 'pro';
 
