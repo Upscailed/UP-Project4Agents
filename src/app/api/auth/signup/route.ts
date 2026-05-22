@@ -12,11 +12,11 @@ export async function POST(req: NextRequest) {
     if (password.length < 8) {
       return NextResponse.json({ error: 'Wachtwoord moet minimaal 8 tekens zijn' }, { status: 400 });
     }
-    if (getUserByEmail(email)) {
+    if (await getUserByEmail(email)) {
       return NextResponse.json({ error: 'Email is al geregistreerd' }, { status: 409 });
     }
 
-    const user = createUser({
+    const user = await createUser({
       email: email.trim().toLowerCase(),
       name: name.trim(),
       password_hash: hashPassword(password),

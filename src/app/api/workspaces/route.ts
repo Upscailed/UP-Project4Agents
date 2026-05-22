@@ -5,7 +5,7 @@ import { requireAuth, isAuthed } from '@/lib/auth';
 export async function GET(req: NextRequest) {
   const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   return NextResponse.json({
-    workspaces: listWorkspacesForUser(auth.user.id),
+    workspaces: await listWorkspacesForUser(auth.user.id),
     current_id: auth.workspace?.id || null,
   });
 }
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     if (!body.name) return NextResponse.json({ error: 'name verplicht' }, { status: 400 });
     if (!body.key) return NextResponse.json({ error: 'key verplicht (bv. "FIF")' }, { status: 400 });
-    const ws = createWorkspace({
+    const ws = await createWorkspace({
       key: body.key,
       name: body.name,
       description: body.description,

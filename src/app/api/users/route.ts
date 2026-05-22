@@ -5,5 +5,5 @@ import { requireAuth, isAuthed } from '@/lib/auth';
 export async function GET() {
   const auth = await requireAuth();
   if (!isAuthed(auth)) return auth;
-  return NextResponse.json(listUsers());
+  return NextResponse.json(await listUsers());
 }

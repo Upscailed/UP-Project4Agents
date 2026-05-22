@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
   }
 
   // 5) Vind/maak user + set session
-  const user = findOrCreateGithubUser({
+  const user = await findOrCreateGithubUser({
     github_id: profile.id,
     email,
     name: profile.name || profile.login,

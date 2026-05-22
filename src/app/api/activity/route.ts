@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const sp = req.nextUrl.searchParams;
-    const items = listActivity({
+    const items = await listActivity({
       issue_id: sp.get('issue_id') || undefined,
       project_id: sp.get('project_id') || undefined,
       limit: sp.get('limit') ? parseInt(sp.get('limit')!) : undefined,

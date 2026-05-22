@@ -4,3 +4,6 @@ data/
 .env
 .env.local
 .session-secret
+.archive/
+tsconfig.tsbuildinfo
+supabase/.temp/

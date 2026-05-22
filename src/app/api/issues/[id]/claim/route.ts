@@ -13,7 +13,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     const body = await req.json();
     const assignee = body.assignee || auth.user.name || 'user';
-    const issue = claimIssue(id, { assignee, comment: body.comment });
+    const issue = await claimIssue(id, { assignee, comment: body.comment });
     if (!issue) return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
     return NextResponse.json(issue);
   } catch (e: any) {

@@ -43,15 +43,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (event === 'pull_request') {
-      return handlePullRequest(payload);
+      return await handlePullRequest(payload);
     }
 
     if (event === 'push') {
-      return handlePush(payload);
+      return await handlePush(payload);
     }
 
     if (event === 'issue_comment') {
-      return handleIssueComment(payload);
+      return await handleIssueComment(payload);
     }
 
     return NextResponse.json({ ignored: event, delivery });
@@ -67,7 +67,7 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(A, B);
 }
 
-function handlePullRequest(payload: any) {
+async function handlePullRequest(payload: any) {
   const pr = payload.pull_request;
   if (!pr) return NextResponse.json({ ignored: 'no pull_request in payload' });
 
@@ -76,18 +76,16 @@ function handlePullRequest(payload: any) {
     | 'review_requested' | 'ready_for_review' | 'assigned' | 'labeled'
     | 'unlabeled' | 'unassigned';
 
-  // alleen relevante acties
   const relevantActions = ['opened', 'reopened', 'closed', 'review_requested', 'ready_for_review', 'synchronize', 'edited'];
   if (!relevantActions.includes(action)) {
     return NextResponse.json({ ignored: action });
   }
 
-  // ready_for_review → behandel als review_requested
   const normalizedAction =
     action === 'ready_for_review' ? 'review_requested' :
     action as any;
 
-  const result = applyGithubPrEvent({
+  const result = await applyGithubPrEvent({
     action: normalizedAction,
     pr_url: pr.html_url,
     pr_number: pr.number,
@@ -100,24 +98,22 @@ function handlePullRequest(payload: any) {
   return NextResponse.json({ ok: true, action, touched: result.touched });
 }
 
-function handlePush(payload: any) {
-  // ref = "refs/heads/iwan/up-42-foo" → branch = "iwan/up-42-foo"
+async function handlePush(payload: any) {
   const ref = payload.ref || '';
   const branch = ref.replace(/^refs\/heads\//, '');
   const identifiers = parseIdentifiers(branch);
 
   const touched: string[] = [];
   for (const ident of identifiers) {
-    const issue = getIssue(ident);
+    const issue = await getIssue(ident);
     if (!issue) continue;
     if (issue.github_branch !== branch) {
-      updateIssue(issue.id, { github_branch: branch }, 'github');
+      await updateIssue(issue.id, { github_branch: branch }, 'github');
     }
-    // Bij eerste push naar feature branch: status → in_progress als 't nog 'todo' is
     if (issue.status === 'todo' || issue.status === 'backlog') {
-      updateIssue(issue.id, { status: 'in_progress' }, 'github');
+      await updateIssue(issue.id, { status: 'in_progress' }, 'github');
     }
-    logActivityPublic('branch_linked', { branch, commits: (payload.commits || []).length, identifier: ident },
+    await logActivityPublic('branch_linked', { branch, commits: (payload.commits || []).length, identifier: ident },
       { issue_id: issue.id, project_id: issue.project_id, actor: 'github' });
     touched.push(ident);
   }
@@ -125,13 +121,11 @@ function handlePush(payload: any) {
   return NextResponse.json({ ok: true, branch, touched });
 }
 
-function handleIssueComment(payload: any) {
-  // PR comments komen ook binnen als issue_comment (GitHub merge issues & PRs hier)
+async function handleIssueComment(payload: any) {
   const issueObj = payload.issue;
   const comment = payload.comment;
   if (!issueObj || !comment) return NextResponse.json({ ignored: 'incomplete payload' });
 
-  // identifiers in PR title/body of in comment body
   const ids = new Set<string>([
     ...parseIdentifiers(issueObj.title || ''),
     ...parseIdentifiers(issueObj.body || ''),
@@ -140,9 +134,9 @@ function handleIssueComment(payload: any) {
 
   const touched: string[] = [];
   for (const ident of ids) {
-    const issue = getIssue(ident);
+    const issue = await getIssue(ident);
     if (!issue) continue;
-    createComment({
+    await createComment({
       issue_id: issue.id,
       author: `github:${comment.user?.login || 'unknown'}`,
       body: `💬 [GitHub] ${comment.body}\n\n— op ${issueObj.html_url}`,

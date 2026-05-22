@@ -1,0 +1,22 @@
+# Supabase project config — gegenereerd door supabase CLI
+# Voor lokale dev (supabase start) — vereist Docker.
+# Voor remote dev/productie gebruiken we 'supabase link --project-ref <ref>'.
+
+project_id = "up-project4agents"
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = false
+
+[inbucket]
+enabled = false
+
+[storage]
+enabled = false
+
+[auth]
+enabled = false

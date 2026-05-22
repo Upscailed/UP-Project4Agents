@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     if (!email || !password) {
       return NextResponse.json({ error: 'email + password verplicht' }, { status: 400 });
     }
-    const u = getUserByEmail(email);
+    const u = await getUserByEmail(email);
     if (!u || !verifyPassword(password, u.password_hash)) {
       return NextResponse.json({ error: 'Onjuiste inloggegevens' }, { status: 401 });
     }

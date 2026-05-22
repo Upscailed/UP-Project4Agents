@@ -55,7 +55,7 @@ export async function getSession() {
 export async function getCurrentUser(): Promise<SafeUser | null> {
   const session = await getSession();
   if (!session.user_id) return null;
-  const u = getUserById(session.user_id);
+  const u = await getUserById(session.user_id);
   if (!u) return null;
   return { id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, role: u.role };
 }
@@ -64,13 +64,12 @@ export async function getCurrentUser(): Promise<SafeUser | null> {
 export async function getCurrentWorkspace(userId: string): Promise<Workspace | null> {
   const session = await getSession();
   if (session.workspace_id) {
-    if (isWorkspaceMember(session.workspace_id, userId)) {
-      const ws = getTeam(session.workspace_id);
+    if (await isWorkspaceMember(session.workspace_id, userId)) {
+      const ws = await getTeam(session.workspace_id);
       if (ws) return ws;
     }
   }
-  // Fallback: eerste workspace waar user lid van is
-  const userWs = listWorkspacesForUser(userId);
+  const userWs = await listWorkspacesForUser(userId);
   if (userWs.length > 0) {
     session.workspace_id = userWs[0].id;
     await session.save();
@@ -80,7 +79,7 @@ export async function getCurrentWorkspace(userId: string): Promise<Workspace | n
 }
 
 export async function switchWorkspace(userId: string, workspaceId: string): Promise<boolean> {
-  if (!isWorkspaceMember(workspaceId, userId)) return false;
+  if (!(await isWorkspaceMember(workspaceId, userId))) return false;
   const session = await getSession();
   session.workspace_id = workspaceId;
   await session.save();
@@ -102,11 +101,10 @@ export async function requireAuth(req?: NextRequest): Promise<{ user: SafeUser; 
       if (expected && token === expected) {
         // System user → krijgt default workspace
         let ws: Workspace | null = null;
-        try { ws = getDefaultTeam(); } catch {}
-        // optionele override via x-p4a-workspace header
+        try { ws = await getDefaultTeam(); } catch {}
         const wsHeader = req.headers.get('x-p4a-workspace');
         if (wsHeader) {
-          const found = getTeam(wsHeader);
+          const found = await getTeam(wsHeader);
           if (found) ws = found;
         }
         return {

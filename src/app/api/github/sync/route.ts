@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
         pr.state === 'OPEN' ? 'opened' :
         pr.mergedAt ? 'closed' :
         pr.closedAt ? 'closed' : 'opened';
-      const result = applyGithubPrEvent({
+      const result = await applyGithubPrEvent({
         action: action as any,
         pr_url: pr.url, pr_number: pr.number,
         branch: pr.headRefName, title: pr.title, body: pr.body || '',

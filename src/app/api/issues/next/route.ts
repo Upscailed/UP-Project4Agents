@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const sp = req.nextUrl.searchParams;
-    const issue = getNextIssue({
+    const issue = await getNextIssue({
       assignee: sp.get('assignee') || undefined,
       project_id: sp.get('project_id') || undefined,
       team_id: sp.get('team_id') || undefined,

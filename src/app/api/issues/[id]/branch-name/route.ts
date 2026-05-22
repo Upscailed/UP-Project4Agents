@@ -12,9 +12,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params;
     // Gebruik logged-in user als default prefix
     const prefix = req.nextUrl.searchParams.get('prefix') || auth.user.name.toLowerCase() || undefined;
-    const issue = getIssue(id);
+    const issue = await getIssue(id);
     if (!issue) return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
-    const branch = generateBranchName(id, prefix);
+    const branch = await generateBranchName(id, prefix);
     return NextResponse.json({ identifier: issue.identifier, branch_name: branch });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
