@@ -260,10 +260,10 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
   const id = uuidv4();
   const teamId = input.team_id ?? (await getDefaultTeam()).id;
   await sql`
-    INSERT INTO projects (id, name, description, color, team_id)
-    VALUES (${id}, ${input.name}, ${input.description || ''}, ${input.color || '#8B5CF6'}, ${teamId})
+    INSERT INTO projects (id, name, description, color, team_id, github_repo)
+    VALUES (${id}, ${input.name}, ${input.description || ''}, ${input.color || '#8B5CF6'}, ${teamId}, ${input.github_repo || ''})
   `;
-  await logActivity('issue_created', { kind: 'project', name: input.name }, { project_id: id, actor: 'user' });
+  await logActivity('issue_created', { kind: 'project', name: input.name, github_repo: input.github_repo || null }, { project_id: id, actor: 'user' });
   return (await getProject(id))!;
 }
 
@@ -276,6 +276,7 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
       description = COALESCE(${input.description ?? null}, description),
       color       = COALESCE(${input.color ?? null}, color),
       team_id     = COALESCE(${input.team_id ?? null}, team_id),
+      github_repo = COALESCE(${input.github_repo ?? null}, github_repo),
       updated_at  = NOW()
     WHERE id = ${id}
   `;

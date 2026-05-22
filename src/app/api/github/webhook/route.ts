@@ -42,16 +42,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ pong: true, zen: payload.zen });
     }
 
+    // Bij elk event loggen we de source-repo voor traceability
+    const sourceRepo = payload.repository?.full_name || null;
+
     if (event === 'pull_request') {
-      return await handlePullRequest(payload);
+      return await handlePullRequest(payload, sourceRepo);
     }
 
     if (event === 'push') {
-      return await handlePush(payload);
+      return await handlePush(payload, sourceRepo);
     }
 
     if (event === 'issue_comment') {
-      return await handleIssueComment(payload);
+      return await handleIssueComment(payload, sourceRepo);
     }
 
     return NextResponse.json({ ignored: event, delivery });
@@ -67,7 +70,7 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(A, B);
 }
 
-async function handlePullRequest(payload: any) {
+async function handlePullRequest(payload: any, sourceRepo: string | null) {
   const pr = payload.pull_request;
   if (!pr) return NextResponse.json({ ignored: 'no pull_request in payload' });
 
@@ -95,10 +98,10 @@ async function handlePullRequest(payload: any) {
     merged: !!pr.merged,
   });
 
-  return NextResponse.json({ ok: true, action, touched: result.touched });
+  return NextResponse.json({ ok: true, action, source_repo: sourceRepo, touched: result.touched });
 }
 
-async function handlePush(payload: any) {
+async function handlePush(payload: any, sourceRepo: string | null) {
   const ref = payload.ref || '';
   const branch = ref.replace(/^refs\/heads\//, '');
   const identifiers = parseIdentifiers(branch);
@@ -113,15 +116,15 @@ async function handlePush(payload: any) {
     if (issue.status === 'todo' || issue.status === 'backlog') {
       await updateIssue(issue.id, { status: 'in_progress' }, 'github');
     }
-    await logActivityPublic('branch_linked', { branch, commits: (payload.commits || []).length, identifier: ident },
+    await logActivityPublic('branch_linked', { branch, commits: (payload.commits || []).length, identifier: ident, source_repo: sourceRepo },
       { issue_id: issue.id, project_id: issue.project_id, actor: 'github' });
     touched.push(ident);
   }
 
-  return NextResponse.json({ ok: true, branch, touched });
+  return NextResponse.json({ ok: true, branch, source_repo: sourceRepo, touched });
 }
 
-async function handleIssueComment(payload: any) {
+async function handleIssueComment(payload: any, sourceRepo: string | null) {
   const issueObj = payload.issue;
   const comment = payload.comment;
   if (!issueObj || !comment) return NextResponse.json({ ignored: 'incomplete payload' });
@@ -144,5 +147,5 @@ async function handleIssueComment(payload: any) {
     touched.push(ident);
   }
 
-  return NextResponse.json({ ok: true, touched });
+  return NextResponse.json({ ok: true, source_repo: sourceRepo, touched });
 }

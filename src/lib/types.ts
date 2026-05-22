@@ -56,6 +56,7 @@ export interface Project {
   description: string;
   color: string;
   team_id: string | null;
+  github_repo: string;       // 'owner/repo' format, leeg = niet gekoppeld
   created_at: string;
   updated_at: string;
 }
@@ -173,6 +174,7 @@ export interface CreateProjectInput {
   description?: string;
   color?: string;
   team_id?: string | null;
+  github_repo?: string;
 }
 
 export interface UpdateProjectInput {
@@ -180,6 +182,7 @@ export interface UpdateProjectInput {
   description?: string;
   color?: string;
   team_id?: string | null;
+  github_repo?: string;
 }
 
 export interface CreateIssueInput {

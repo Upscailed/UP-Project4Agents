@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS projects (
   description TEXT DEFAULT '',
   color TEXT DEFAULT '#8B5CF6',
   team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+  github_repo TEXT DEFAULT '',  -- bv. 'Upscailed/sales-flow'
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

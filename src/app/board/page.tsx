@@ -18,7 +18,7 @@ type IssueStatus = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' |
 type IssuePriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicates' | 'duplicate_of';
 
-interface Project { id: string; name: string; description: string; color: string; team_id: string | null; }
+interface Project { id: string; name: string; description: string; color: string; team_id: string | null; github_repo?: string; }
 interface Issue {
   id: string; identifier: string; project_id: string; team_id: string | null;
   title: string; description: string;
@@ -1382,31 +1382,57 @@ function ActivityView({ items }: { items: Activity[] }) {
 function NewProjectModal({ onCreated, onClose }: { onCreated: () => void; onClose: () => void }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [githubRepo, setGithubRepo] = useState('');
   const [color, setColor] = useState(PROJECT_COLORS[0]);
   const submit = async () => {
     if (!name.trim()) return;
-    await api.post('/api/projects', { name, description, color });
+    await api.post('/api/projects', {
+      name, description, color,
+      github_repo: githubRepo.trim() || undefined,
+    });
     onCreated();
   };
   return (
     <ModalOverlay onClose={onClose}>
       <h3 style={modalH()}>Nieuw project</h3>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Project naam" autoFocus
-        onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-        style={{ ...selectStyle(), width: '100%', marginBottom: 10 }}
-      />
-      <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Beschrijving"
-        style={textareaStyle(60)}
-      />
-      <div style={{ display: 'flex', gap: 6, margin: '12px 0' }}>
-        {PROJECT_COLORS.map(c => (
-          <button key={c} onClick={() => setColor(c)} style={{
-            width: 22, height: 22, borderRadius: '50%', background: c,
-            border: color === c ? '2px solid white' : '2px solid transparent', cursor: 'pointer',
-          }} />
-        ))}
+      <Field label="Naam">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="bv. Sales Flow" autoFocus
+          onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+          style={{ ...selectStyle(), width: '100%' }}
+        />
+      </Field>
+      <div style={{ marginTop: 10 }}>
+        <Field label="Beschrijving">
+          <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Wat is dit project?"
+            style={textareaStyle(50)}
+          />
+        </Field>
       </div>
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+      <div style={{ marginTop: 10 }}>
+        <Field label="GitHub repo (optioneel)">
+          <input value={githubRepo} onChange={e => setGithubRepo(e.target.value)}
+            placeholder="bv. Upscailed/sales-flow"
+            style={{ ...selectStyle(), width: '100%', fontFamily: 'monospace' }}
+          />
+          <span style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 4, display: 'block' }}>
+            Format: <code style={{ background: 'var(--bg-card)', padding: '1px 4px', borderRadius: 3 }}>owner/repo</code>.
+            Wordt gebruikt voor branch-naam suggesties en webhook-koppeling. Kan later worden toegevoegd.
+          </span>
+        </Field>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <Field label="Kleur">
+          <div style={{ display: 'flex', gap: 6 }}>
+            {PROJECT_COLORS.map(c => (
+              <button key={c} onClick={() => setColor(c)} style={{
+                width: 22, height: 22, borderRadius: '50%', background: c,
+                border: color === c ? '2px solid white' : '2px solid transparent', cursor: 'pointer',
+              }} />
+            ))}
+          </div>
+        </Field>
+      </div>
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 14 }}>
         <button onClick={onClose} style={btnStyle('outline')}>Annuleer</button>
         <button onClick={submit} style={btnStyle('primary')}>Aanmaken</button>
       </div>
