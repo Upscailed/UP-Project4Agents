@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# Run productie-build voor elke git push. Voorkomt failed Vercel deploys.
+echo "▶ Verifying production build before push..."
+npm run build 2>&1 | tail -20
+if [ $? -ne 0 ]; then
+  echo
+  echo "❌ BUILD FAILED — push geblokkeerd. Fix de errors en probeer opnieuw."
+  echo "   (Bypass met --no-verify als je écht zeker weet wat je doet.)"
+  exit 1
+fi
+echo "✓ Build OK — pushing"

@@ -115,6 +115,11 @@ export default function Board() {
   const [search, setSearch] = useState('');
   const [dragIssue, setDragIssue] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('board');
+  const [toast, setToast] = useState<{ message: string; type?: 'success' | 'error' | 'info' } | null>(null);
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 2500);
+  }, []);
 
   const loadProjects = useCallback(() => api.get<Project[]>('/api/projects').then(setProjects), []);
   const loadCycles = useCallback(() => api.get<Cycle[]>('/api/cycles').then(setCycles), []);
@@ -155,10 +160,13 @@ export default function Board() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workspace_id: workspaceId }),
     });
-    const d = await fetch('/api/me').then(r => r.json());
-    setCurrentWs(d.workspace || null);
     setSelectedProject(null); setSelectedView(null);
-    loadProjects(); loadIssues(); loadCycles();
+    // Parallel ophalen: workspace info + alle workspace-data tegelijk
+    const [meRes] = await Promise.all([
+      fetch('/api/me').then(r => r.json()),
+      loadProjects(), loadIssues(), loadCycles(),
+    ]);
+    setCurrentWs(meRes.workspace || null);
   };
 
   const refreshWorkspaces = async () => {
@@ -167,8 +175,17 @@ export default function Board() {
     setCurrentWs(d.workspace || null);
   };
 
-  useEffect(() => { if (authChecked) { loadProjects(); loadCycles(); loadViews(); } }, [authChecked, loadProjects, loadCycles, loadViews]);
-  useEffect(() => { if (authChecked) loadIssues(); }, [authChecked, loadIssues]);
+  // Parallel data-load: alle initial endpoints tegelijk i.p.v. sequentieel
+  useEffect(() => {
+    if (!authChecked) return;
+    Promise.all([loadProjects(), loadCycles(), loadViews(), loadIssues()]).catch(() => {});
+  }, [authChecked, loadProjects, loadCycles, loadViews, loadIssues]);
+
+  // Issues herladen wanneer filters wijzigen (apart van initial load)
+  useEffect(() => {
+    if (authChecked) loadIssues();
+  }, [authChecked, loadIssues]);
+
   useEffect(() => { if (authChecked && tab === 'activity') loadActivity(); }, [authChecked, tab, loadActivity]);
 
   // BELANGRIJK: alle hooks MOETEN vóór elke conditional return staan (React rules-of-hooks).
@@ -196,9 +213,24 @@ export default function Board() {
   };
 
   const updateIssueField = async (id: string, field: string, value: any) => {
-    const updated = await api.patch<Issue>(`/api/issues?id=${id}`, { [field]: value });
-    setIssues(prev => prev.map(i => i.id === id ? updated : i));
-    if (selectedIssue?.id === id) setSelectedIssue({ ...selectedIssue, ...updated });
+    // Optimistic update: pas UI meteen aan, rollback bij failure
+    const prevIssues = issues;
+    const prevSelected = selectedIssue;
+    setIssues(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
+    if (selectedIssue?.id === id) setSelectedIssue({ ...selectedIssue, [field]: value });
+    try {
+      const updated = await api.patch<Issue>(`/api/issues?id=${id}`, { [field]: value });
+      if ((updated as any).error) throw new Error((updated as any).error);
+      // Reconcile met serverversie (timestamps etc.)
+      setIssues(prev => prev.map(i => i.id === id ? updated : i));
+      if (selectedIssue?.id === id) setSelectedIssue(s => s ? { ...s, ...updated } : s);
+    } catch (e) {
+      // Rollback
+      setIssues(prevIssues);
+      setSelectedIssue(prevSelected);
+      showToast('Update mislukt, wijziging teruggedraaid', 'error');
+      console.error('Update faalde, rollback:', e);
+    }
   };
 
   const handleDrop = (status: IssueStatus) => {
@@ -495,8 +527,12 @@ export default function Board() {
           }}
           onBranchName={async () => {
             const r = await api.get<{ branch_name: string }>(`/api/issues/${selectedIssue.id}/branch-name`);
-            try { await navigator.clipboard.writeText(r.branch_name); alert(`Branch-naam gekopieerd:\n${r.branch_name}`); }
-            catch { alert(`Branch-naam: ${r.branch_name}`); }
+            try {
+              await navigator.clipboard.writeText(r.branch_name);
+              showToast(`Branch-naam gekopieerd: ${r.branch_name}`);
+            } catch {
+              showToast(`Branch-naam: ${r.branch_name}`, 'info');
+            }
           }}
           onDelete={async () => {
             await api.del(`/api/issues?id=${selectedIssue.id}`);
@@ -538,6 +574,21 @@ export default function Board() {
           myUserId={me?.id || ''}
           onClose={() => setShowMembers(false)}
         />
+      )}
+
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+          padding: '10px 18px', borderRadius: 999,
+          background: toast.type === 'error' ? '#EF4444' : toast.type === 'info' ? 'var(--bg-card)' : 'var(--accent)',
+          color: 'white', fontSize: 13, fontWeight: 600,
+          boxShadow: '0 6px 20px rgba(0,0,0,0.4)',
+          border: toast.type === 'info' ? '1px solid var(--border)' : 'none',
+          zIndex: 9999, maxWidth: 480,
+          animation: 'fadeInUp 0.18s ease-out',
+        }}>
+          {toast.message}
+        </div>
       )}
     </div>
   );
