@@ -23,7 +23,7 @@ export const MCP_TOOLS = [
         color: { type: 'string' },
         github_repo: { type: 'string', description: 'STERK AANBEVOLEN. Format: owner/repo (bv "Upscailed/sales-flow"). Vraag user als je niet zeker weet.' },
       } } },
-  { name: 'update_project', description: 'Werk een project bij. Gebruik dit om alsnog github_repo te zetten op een bestaand project waar 't ontbreekt.',
+  { name: 'update_project', description: `Werk een project bij. Gebruik dit om alsnog github_repo te zetten op een bestaand project waar 't ontbreekt.`,
     inputSchema: { type: 'object', required: ['id'],
       properties: {
         id: { type: 'string' },
