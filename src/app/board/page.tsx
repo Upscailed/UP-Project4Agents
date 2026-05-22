@@ -171,6 +171,9 @@ export default function Board() {
   useEffect(() => { if (authChecked) loadIssues(); }, [authChecked, loadIssues]);
   useEffect(() => { if (authChecked && tab === 'activity') loadActivity(); }, [authChecked, tab, loadActivity]);
 
+  // BELANGRIJK: alle hooks MOETEN vóór elke conditional return staan (React rules-of-hooks).
+  const activeCycle = useMemo(() => cycles.find(c => c.status === 'active'), [cycles]);
+
   // Loading state tijdens auth-check
   if (!authChecked) {
     return (
@@ -206,8 +209,6 @@ export default function Board() {
   };
 
   const issuesForColumn = (status: IssueStatus) => issues.filter(i => i.status === status);
-
-  const activeCycle = useMemo(() => cycles.find(c => c.status === 'active'), [cycles]);
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)' }}>
