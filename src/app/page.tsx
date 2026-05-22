@@ -79,7 +79,7 @@ function Hero() {
           fontSize: 'clamp(40px, 6vw, 64px)', fontWeight: 800, lineHeight: 1.05,
           letterSpacing: '-1.5px', marginBottom: 20,
         }}>
-          Linear voor je
+          Project management voor je
           <br />
           <span style={{
             background: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
@@ -189,7 +189,7 @@ function Features() {
     { icon: 'agent', title: 'MCP-server ingebouwd',
       body: '20 tools direct beschikbaar in Claude Code. Agents claimen taken, lezen criteria, en loggen voortgang via stdio MCP — zonder curl.' },
     { icon: 'github', title: 'GitHub auto-flow',
-      body: 'Branch met UP-42 in naam → status In Progress. PR opened → In Progress. Merged met "Fixes UP-42" → Done. Zoals Linear.' },
+      body: 'Branch met UP-42 in naam → status In Progress. PR opened → In Progress. Merged met "Fixes UP-42" → Done. Volautomatisch.' },
     { icon: 'sub_issues', title: 'Sub-issues + dependencies',
       body: 'Breek grote taken op. Link blocks / blocked_by zodat de "next task" query geblokkeerde issues automatisch overslaat.' },
     { icon: 'cycles', title: 'Cycles & sprints',
@@ -452,7 +452,7 @@ function Faq() {
     { q: 'Hoe werkt de MCP-koppeling met Claude Code?',
       a: `In de Pro versie staat er een .mcp.json in de project root. Claude Code laadt 'm automatisch zodra je naar de map gaat — je krijgt 20 tools (get_next_issue, claim_issue, get_branch_name, etc.) en de agent kan zelfstandig issues claimen en updaten.` },
     { q: 'Wat doet de GitHub-integratie precies?',
-      a: `Zoals Linear: branch met "UP-42" in de naam → status In Progress. PR opened → In Progress. PR review-requested → In Review. PR merged → Done. "Fixes UP-42" in PR body sluit de issue automatisch bij merge.` },
+      a: `Branch met "UP-42" in de naam → status In Progress. PR opened → In Progress. PR review-requested → In Review. PR merged → Done. "Fixes UP-42" in PR body sluit de issue automatisch bij merge.` },
     { q: 'Kan ik later van Free naar Pro upgraden zonder data te verliezen?',
       a: `Ja. Je data blijft in dezelfde SQLite-database — bij upgrade worden alleen de feature-locks verwijderd. Geen migratie nodig.` },
     { q: 'Heb ik een team-account nodig als ik agents wil laten samenwerken?',

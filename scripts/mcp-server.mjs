@@ -173,7 +173,7 @@ const TOOLS = [
   },
   {
     name: 'get_branch_name',
-    description: 'Branch-naam suggestie zoals Linear: prefix/up-42-titel-slug.',
+    description: 'Branch-naam suggestie in slug-format: prefix/up-42-titel-slug.',
     inputSchema: {
       type: 'object',
       required: ['id'],

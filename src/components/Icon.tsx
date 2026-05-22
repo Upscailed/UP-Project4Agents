@@ -3,14 +3,14 @@
 import React from 'react';
 
 /**
- * Strakke monochrome SVG iconen — Linear-style.
+ * Strakke monochrome SVG iconen.
  * Allemaal 16×16 default, gebruiken `currentColor` zodat ze de tekstkleur volgen.
  *
  * Gebruik: <Icon name="status_in_progress" size={14} />
  */
 
 export type IconName =
-  // Status (Linear-stijl ring/pie)
+  // Status (ring/pie/check varianten)
   | 'status_triage'
   | 'status_backlog'
   | 'status_todo'
@@ -126,7 +126,7 @@ export function Icon({
         </svg>
       );
 
-    // ── Priority (Linear-stijl 3 ascending bars) ───────────────
+    // ── Priority (3 ascending bars) ───────────────
     case 'priority_none':
       // drie kleine punten op midden
       return (

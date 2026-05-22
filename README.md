@@ -1,16 +1,16 @@
 # UP-Project4Agents
 
-**Linear-style project management voor AI-agents.** Kanban board, REST API, MCP-server en GitHub-integratie — alles lokaal, alles snel.
+**Modern project management voor AI-agents.** Kanban board, REST API, MCP-server en GitHub-integratie — alles lokaal, alles snel.
 
 ![status](https://img.shields.io/badge/status-actief-10B981) ![next.js](https://img.shields.io/badge/next.js-15-black) ![mcp](https://img.shields.io/badge/MCP-stdio-A78BFA)
 
 ## Features
 
 - **Kanban board** — Triage / Backlog / Todo / In Progress / In Review / Done
-- **Linear concepts** — projects, sub-issues, linked issues (blocks/blocked-by/relates), cycles, estimates, due dates, assignees, activity log, saved views
+- **Modern PM-features** — projects, sub-issues, linked issues (blocks/blocked-by/relates), cycles, estimates, due dates, assignees, activity log, saved views
 - **REST API** op `http://localhost:3400/api` voor projects, issues, cycles, links, activity, stats
 - **MCP-server** — 20 tools direct beschikbaar voor Claude Code (issue claim, branch-name, etc.)
-- **GitHub-integratie** — webhook + polling-fallback. Branch/PR-identifiers worden auto-gelinkt, PR events triggeren status-transitions (zoals Linear), "Fixes UP-42" markeert als Done bij merge.
+- **GitHub-integratie** — webhook + polling-fallback. Branch/PR-identifiers worden auto-gelinkt, PR events triggeren status-transitions, "Fixes UP-42" markeert als Done bij merge.
 
 ## Quick start
 

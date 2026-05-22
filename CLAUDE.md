@@ -2,7 +2,7 @@
 
 ## Wat is dit?
 
-UP/Project4Agents is een lokaal projectmanagement-systeem, geïnspireerd op **Linear**,
+UP/Project4Agents is een modern projectmanagement-systeem,
 specifiek gebouwd voor AI-agents. Het biedt:
 
 - **Kanban board** met Triage / Backlog / Todo / In Progress / In Review / Done
@@ -102,7 +102,7 @@ Vereiste: de Next.js dev-server moet draaien (`npm run dev`) — de MCP-server p
 | `delete_issue` | Verwijder issue |
 | `add_comment` | Comment / activity toevoegen |
 | `list_comments` | Comments van een issue |
-| `get_branch_name` | Branch-naam zoals Linear: `prefix/up-42-slug` |
+| `get_branch_name` | Branch-naam-suggestie: `prefix/up-42-slug` |
 | `link_issues` | blocks / blocked_by / relates_to / duplicates |
 | `get_issue_links` | Links van een issue |
 | `list_cycles` | Cycles (sprints) |
@@ -114,7 +114,7 @@ Vereiste: de Next.js dev-server moet draaien (`npm run dev`) — de MCP-server p
 
 ## GitHub-integratie opzetten
 
-Zoals Linear: branch & PR koppelen automatisch aan issues (via identifier `UP-42` in branch-naam,
+Branch & PR koppelen automatisch aan issues (via identifier `UP-42` in branch-naam,
 PR-title of body), en status verandert mee bij PR events.
 
 ### Optie A — Webhook via Cloudflare Tunnel (real-time)
@@ -154,7 +154,7 @@ Of via crontab:
 
 Vereist: `gh` CLI is geauthenticeerd. Zet `GITHUB_REPO=owner/repo` in `.env.local` of laat 'm autodetecten via `git remote`.
 
-### Auto status-transitions (zoals Linear)
+### Auto status-transitions
 
 | Event | Issue gaat naar |
 |---|---|
@@ -309,5 +309,5 @@ status-CHECK constraint wordt automatisch verwijderd zodat `todo` / `in_review` 
 - **Voeg comments toe als activity-log.** Geen lange chat met de user — laat de comments je voortgang vertellen.
 - **Stel sub-issues op** bij grote taken. `parent_issue_id` koppelt ze visueel + de parent toont voortgang.
 - **Mark blocks/blocked_by** als je dependencies tegenkomt. `get_next_issue` slaat geblokkeerde issues over.
-- **Eén branch per issue.** `get_branch_name` geeft je de Linear-style naam.
+- **Eén branch per issue.** `get_branch_name` geeft je een gestandaardiseerde slug-naam.
 - **Magic words in PR body** ("Fixes UP-42") sluiten de issue automatisch bij merge.
