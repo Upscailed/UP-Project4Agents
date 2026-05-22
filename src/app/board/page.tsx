@@ -203,12 +203,18 @@ export default function Board() {
   }
 
   const openIssue = async (issue: Issue) => {
-    const full = await api.get<Issue>(`/api/issues?id=${issue.id}`);
-    setSelectedIssue(full);
-    const [c, l] = await Promise.all([
+    // Instant feedback: toon de issue uit cache direct, geen wachten
+    setSelectedIssue(issue);
+    setComments([]); setLinks([]);  // reset zodat oude data niet flashen
+
+    // Parallel ophalen: full issue (met sub_issues + project), comments, links
+    const [full, c, l] = await Promise.all([
+      api.get<Issue>(`/api/issues?id=${issue.id}`),
       api.get<Comment[]>(`/api/comments?issue_id=${issue.id}`),
       api.get<IssueLinkRow[]>(`/api/issues/${issue.id}/links`),
     ]);
+    // Reconcile alleen als de user de modal nog open heeft op dezelfde issue
+    setSelectedIssue(prev => prev && prev.id === issue.id ? full : prev);
     setComments(c); setLinks(l);
   };
 

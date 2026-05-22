@@ -49,7 +49,7 @@ export const MCP_TOOLS = [
     inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
   { name: 'get_next_issue', description: 'Volgende taak: hoogste prio, niet geblokkeerd.',
     inputSchema: { type: 'object', properties: { assignee: { type: 'string' }, project_id: { type: 'string' } } } },
-  { name: 'claim_issue', description: 'Atomic claim: status=in_progress + assignee + comment.',
+  { name: 'claim_issue', description: `Atomic claim: zet status=in_progress + assignee + voegt comment toe. GEBRUIK DIT ALTIJD voor je aan een issue begint — niet update_issue. Zo ziet de user dat je actief bezig bent (status In Progress). Plus: roep tijdens je werk add_comment aan om voortgang te delen (bv. "Begonnen met X", "Schema af, nu testen", "PR aangemaakt").`,
     inputSchema: { type: 'object', required: ['id', 'assignee'],
       properties: { id: { type: 'string' }, assignee: { type: 'string' }, comment: { type: 'string' } } } },
   { name: 'create_issue', description: 'Maak een nieuwe issue. BELANGRIJK: controleer dat het parent-project een github_repo heeft VOOR je veel issues aanmaakt. Zonder repo werkt branch-naam-suggesties en PR-linking niet. Response bevat warning-veld als project geen repo heeft. Gebruik sub via parent_issue_id voor sub-issues.',
@@ -63,7 +63,7 @@ export const MCP_TOOLS = [
         due_date: { type: 'string' }, cycle_id: { type: 'string' },
         github_branch: { type: 'string' },
       } } },
-  { name: 'update_issue', description: 'Werk een issue bij. Alle velden optioneel.',
+  { name: 'update_issue', description: `Werk een issue bij. WORKFLOW voor status: backlog → todo → in_progress → in_review → done. Sla in_progress NOOIT over voor zichtbaarheid (de server forceert anders alsnog een tussen-stap). Gebruik liever claim_issue om naar in_progress te gaan; gebruik update_issue voor status='in_review' wanneer PR open, en 'done' bij merge. Roep add_comment aan om voortgang te delen tijdens 'in_progress'.`,
     inputSchema: { type: 'object', required: ['id'],
       properties: {
         id: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' },

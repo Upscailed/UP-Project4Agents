@@ -387,6 +387,32 @@ export async function updateIssue(id: string, input: UpdateIssueInput, actor = '
   const existing = await getIssue(id);
   if (!existing) return undefined;
 
+  // ─── Status-flow enforce ────────────────────────────────────
+  // Voorkom dat agents direct van backlog/todo naar in_review/done springen
+  // zonder zichtbaar in_progress te tonen. Forceer intermediate stap.
+  const skipsInProgress =
+    input.status &&
+    (existing.status === 'backlog' || existing.status === 'todo') &&
+    (input.status === 'in_review' || input.status === 'done');
+
+  if (skipsInProgress) {
+    // Pas eerst impliciet in_progress toe (met eigen activity log)
+    const now = new Date().toISOString();
+    await sql`
+      UPDATE issues SET
+        status = 'in_progress',
+        started_at = COALESCE(started_at, ${now}),
+        updated_at = NOW()
+      WHERE id = ${existing.id}
+    `;
+    await logActivity('status_changed',
+      { from: existing.status, to: 'in_progress', identifier: existing.identifier, auto_intermediate: true },
+      { issue_id: existing.id, project_id: existing.project_id, actor });
+    // Update existing-state zodat de hoofd-update vanaf in_progress vertrekt
+    existing.status = 'in_progress';
+    existing.started_at = existing.started_at || now;
+  }
+
   const labels = input.labels !== undefined ? JSON.stringify(input.labels) : null;
   let startedAt: string | null | undefined = undefined;
   let completedAt: string | null | undefined = undefined;
