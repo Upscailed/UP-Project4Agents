@@ -4,7 +4,8 @@
       "command": "node",
       "args": ["./scripts/mcp-server.mjs"],
       "env": {
-        "P4A_API": "http://localhost:3400/api"
+        "P4A_API": "http://localhost:3400/api",
+        "P4A_API_TOKEN": "${P4A_API_TOKEN}"
       }
     }
   }

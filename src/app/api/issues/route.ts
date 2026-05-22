@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listIssues, createIssue, getIssue, updateIssue, deleteIssue, listSubIssues } from '@/lib/db';
+import { requireAuth, isAuthed } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const sp = req.nextUrl.searchParams;
     const id = sp.get('id');
@@ -11,14 +13,11 @@ export async function GET(req: NextRequest) {
       const subs = listSubIssues(issue.id);
       return NextResponse.json({ ...issue, sub_issues: subs });
     }
-
-    // status/priority kunnen meerdere waarden hebben via comma's
     const splitMulti = (key: string) => {
       const v = sp.get(key);
       if (!v) return undefined;
       return v.includes(',') ? v.split(',').map(s => s.trim()) : v;
     };
-
     const issues = listIssues({
       project_id: sp.get('project_id') || undefined,
       team_id: sp.get('team_id') || undefined,
@@ -38,6 +37,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const body = await req.json();
     if (!body.project_id) return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
@@ -50,11 +50,12 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const body = await req.json();
     const id = req.nextUrl.searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'id parameter required' }, { status: 400 });
-    const actor = req.headers.get('x-actor') || body.actor || 'user';
+    const actor = auth.user.name || 'user';
     delete body.actor;
     const issue = updateIssue(id, body, actor);
     if (!issue) return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
@@ -65,6 +66,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const id = req.nextUrl.searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'id parameter required' }, { status: 400 });

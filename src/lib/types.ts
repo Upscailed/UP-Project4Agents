@@ -29,6 +29,21 @@ export type ActivityType =
   | 'linked_issue_added'
   | 'parent_changed';
 
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  password_hash: string;
+  avatar_url: string;
+  role: 'admin' | 'member';
+  created_at: string;
+}
+
+export interface SafeUser {
+  id: string; email: string; name: string;
+  avatar_url: string; role: 'admin' | 'member';
+}
+
 export interface Project {
   id: string;
   name: string;

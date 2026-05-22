@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateBranchName, getIssue } from '@/lib/db';
+import { requireAuth, isAuthed } from '@/lib/auth';
 
 /**
  * GET /api/issues/[id]/branch-name?prefix=iwan
  * → { branch_name: "iwan/up-42-titel-slug" }
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const { id } = await params;
-    const prefix = req.nextUrl.searchParams.get('prefix') || undefined;
+    // Gebruik logged-in user als default prefix
+    const prefix = req.nextUrl.searchParams.get('prefix') || auth.user.name.toLowerCase() || undefined;
     const issue = getIssue(id);
     if (!issue) return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
     const branch = generateBranchName(id, prefix);

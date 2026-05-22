@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listLinks, createLink, getIssue } from '@/lib/db';
+import { requireAuth, isAuthed } from '@/lib/auth';
 
 /**
  * GET  /api/issues/[id]/links            → alle links van/naar een issue
  * POST /api/issues/[id]/links            → { to: "UP-43", link_type: "blocks" | "blocked_by" | "relates_to" | "duplicates" }
  */
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const { id } = await params;
     const issue = getIssue(id);
@@ -25,6 +27,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const { id } = await params;
     const body = await req.json();

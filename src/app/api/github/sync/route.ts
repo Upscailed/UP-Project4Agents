@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { applyGithubPrEvent } from '@/lib/db';
 import { execSync } from 'child_process';
+import { requireAuth, isAuthed } from '@/lib/auth';
 
 /**
  * POST /api/github/sync
@@ -13,6 +14,7 @@ import { execSync } from 'child_process';
  *  - cron job (zie scripts/github-poll.js)
  */
 export async function POST(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const body = await req.json().catch(() => ({}));
     const repo = body.repo || process.env.GITHUB_REPO || detectRepo();

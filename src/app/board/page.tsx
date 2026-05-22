@@ -1,7 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Icon, IconName } from '@/components/Icon';
+
+interface Me { id: string; email: string; name: string; avatar_url: string; role: 'admin' | 'member'; }
 
 // ── Types ──
 type IssueStatus = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
@@ -82,6 +86,9 @@ const api = {
 type Tab = 'board' | 'cycles' | 'activity';
 
 export default function Board() {
+  const router = useRouter();
+  const [me, setMe] = useState<Me | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [cycles, setCycles] = useState<Cycle[]>([]);
@@ -122,9 +129,29 @@ export default function Board() {
     api.get<Issue[]>(`/api/issues?${params}`).then(setIssues);
   }, [selectedProject, selectedView, search, views]);
 
-  useEffect(() => { loadProjects(); loadCycles(); loadViews(); }, [loadProjects, loadCycles, loadViews]);
-  useEffect(() => { loadIssues(); }, [loadIssues]);
-  useEffect(() => { if (tab === 'activity') loadActivity(); }, [tab, loadActivity]);
+  // Auth check
+  useEffect(() => {
+    fetch('/api/me').then(r => r.json()).then(d => {
+      if (!d.user) { router.push('/login?redirect=/board'); return; }
+      setMe(d.user);
+      setAuthChecked(true);
+    }).catch(() => router.push('/login?redirect=/board'));
+  }, [router]);
+
+  useEffect(() => { if (authChecked) { loadProjects(); loadCycles(); loadViews(); } }, [authChecked, loadProjects, loadCycles, loadViews]);
+  useEffect(() => { if (authChecked) loadIssues(); }, [authChecked, loadIssues]);
+  useEffect(() => { if (authChecked && tab === 'activity') loadActivity(); }, [authChecked, tab, loadActivity]);
+
+  // Loading state tijdens auth-check
+  if (!authChecked) {
+    return (
+      <div style={{
+        height: '100vh', background: 'var(--bg)', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)',
+        fontSize: 13,
+      }}>Laden...</div>
+    );
+  }
 
   const openIssue = async (issue: Issue) => {
     const full = await api.get<Issue>(`/api/issues?id=${issue.id}`);
@@ -290,10 +317,16 @@ export default function Board() {
              selectedProject ? projects.find(p => p.id === selectedProject)?.name :
              tab === 'cycles' ? 'Cycles' : tab === 'activity' ? 'Activity log' : 'Alle issues'}
           </h1>
-          <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-            API: <code style={{ color: 'var(--accent)', background: 'var(--accent-glow)', padding: '2px 6px', borderRadius: 4 }}>
-              localhost:3400/api
-            </code>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+              API: <code style={{ color: 'var(--accent)', background: 'var(--accent-glow)', padding: '2px 6px', borderRadius: 4 }}>
+                localhost:3400/api
+              </code>
+            </div>
+            {me && <UserMenu me={me} onLogout={async () => {
+              await fetch('/api/auth/logout', { method: 'POST' });
+              router.push('/login');
+            }} />}
           </div>
         </header>
 
@@ -410,6 +443,7 @@ export default function Board() {
       {selectedIssue && (
         <IssueDetail
           issue={selectedIssue}
+          me={me}
           projects={projects}
           cycles={cycles}
           comments={comments}
@@ -499,6 +533,67 @@ function SidebarItem({ active, onClick, color, left, label, right }: {
   );
 }
 
+// ── User menu ──
+function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const h = () => setOpen(false);
+    setTimeout(() => window.addEventListener('click', h, { once: true }), 0);
+    return () => window.removeEventListener('click', h);
+  }, [open]);
+  const initials = me.name.split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase();
+  return (
+    <div style={{ position: 'relative' }}>
+      <button onClick={e => { e.stopPropagation(); setOpen(!open); }} style={{
+        background: 'var(--bg-card)', border: '1px solid var(--border)',
+        borderRadius: 999, padding: '4px 12px 4px 4px',
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        cursor: 'pointer', color: 'var(--text)', fontSize: 12, fontWeight: 600,
+      }}>
+        <span style={{
+          width: 24, height: 24, borderRadius: '50%',
+          background: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          color: 'white', fontWeight: 700, fontSize: 10, letterSpacing: '0.3px',
+        }}>{initials}</span>
+        {me.name}
+      </button>
+      {open && (
+        <div onClick={e => e.stopPropagation()} style={{
+          position: 'absolute', top: '100%', right: 0, marginTop: 6,
+          background: 'var(--bg-surface)', border: '1px solid var(--border)',
+          borderRadius: 8, minWidth: 220, padding: 6, zIndex: 50,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+        }}>
+          <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{me.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{me.email}</div>
+            {me.role === 'admin' && (
+              <span style={{
+                display: 'inline-block', marginTop: 4, fontSize: 9,
+                padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: '0.3px',
+                background: 'var(--accent-glow)', color: 'var(--accent)', textTransform: 'uppercase',
+              }}>Admin</span>
+            )}
+          </div>
+          <Link href="/" style={menuItemStyle()}>← Landingspagina</Link>
+          <button onClick={onLogout} style={{ ...menuItemStyle(), color: '#FCA5A5' }}>Uitloggen</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function menuItemStyle(): React.CSSProperties {
+  return {
+    display: 'block', width: '100%', padding: '8px 10px',
+    background: 'none', border: 'none', textAlign: 'left',
+    color: 'var(--text)', fontSize: 13, cursor: 'pointer', borderRadius: 4,
+    textDecoration: 'none',
+  };
+}
+
 function StatLine({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -553,8 +648,8 @@ function NewIssueInline({ status, projects, selectedProject, onCreated, onCancel
 }
 
 // ── Issue detail panel ──
-function IssueDetail({ issue, projects, cycles, comments, links, allIssues, onUpdate, onAddComment, onAddLink, onClaim, onBranchName, onDelete, onClose }: {
-  issue: Issue; projects: Project[]; cycles: Cycle[];
+function IssueDetail({ issue, me, projects, cycles, comments, links, allIssues, onUpdate, onAddComment, onAddLink, onClaim, onBranchName, onDelete, onClose }: {
+  issue: Issue; me: Me | null; projects: Project[]; cycles: Cycle[];
   comments: Comment[]; links: IssueLinkRow[]; allIssues: Issue[];
   onUpdate: (field: string, value: any) => void;
   onAddComment: (body: string) => void;
@@ -576,7 +671,7 @@ function IssueDetail({ issue, projects, cycles, comments, links, allIssues, onUp
   const [linkTarget, setLinkTarget] = useState('');
   const [linkType, setLinkType] = useState<LinkType>('blocks');
   const [showClaim, setShowClaim] = useState(false);
-  const [claimAs, setClaimAs] = useState('agent');
+  const [claimAs, setClaimAs] = useState(me?.name || 'agent');
 
   useEffect(() => {
     setTitle(issue.title); setDesc(issue.description);
@@ -815,7 +910,25 @@ function IssueDetail({ issue, projects, cycles, comments, links, allIssues, onUp
         {showClaim && (
           <ModalOverlay onClose={() => setShowClaim(false)}>
             <h3 style={modalH()}>Claim issue</h3>
-            <input value={claimAs} onChange={e => setClaimAs(e.target.value)} placeholder="agent / iwan / ..." autoFocus
+            <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 12 }}>
+              Wie pakt deze issue op?
+            </p>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              {me && (
+                <button onClick={() => setClaimAs(me.name)} style={{
+                  ...btnStyle(claimAs === me.name ? 'primary' : 'outline'), flex: 1,
+                }}>
+                  <Icon name="user" size={11} /> <span style={{ marginLeft: 4 }}>Ik ({me.name})</span>
+                </button>
+              )}
+              <button onClick={() => setClaimAs('agent')} style={{
+                ...btnStyle(claimAs === 'agent' ? 'primary' : 'outline'), flex: 1,
+              }}>
+                <Icon name="agent" size={11} /> <span style={{ marginLeft: 4 }}>Agent</span>
+              </button>
+            </div>
+            <input value={claimAs} onChange={e => setClaimAs(e.target.value)}
+              placeholder="of een andere naam..."
               style={{ ...selectStyle(), width: '100%', marginBottom: 10 }} />
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowClaim(false)} style={btnStyle('outline')}>Annuleer</button>

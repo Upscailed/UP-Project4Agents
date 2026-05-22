@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listProjects, createProject, getProject, updateProject, deleteProject } from '@/lib/db';
+import { requireAuth, isAuthed } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const id = req.nextUrl.searchParams.get('id');
     if (id) {
@@ -16,6 +18,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const body = await req.json();
     if (!body.name) return NextResponse.json({ error: 'name is required' }, { status: 400 });
@@ -27,6 +30,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const body = await req.json();
     const id = req.nextUrl.searchParams.get('id');
@@ -40,6 +44,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const id = req.nextUrl.searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'id parameter required' }, { status: 400 });

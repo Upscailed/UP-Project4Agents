@@ -17,11 +17,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 const API_BASE = process.env.P4A_API || 'http://localhost:3400/api';
+const API_TOKEN = process.env.P4A_API_TOKEN || '';
 
 // ── HTTP helpers ──
 async function api(method, path, body) {
   const url = `${API_BASE}${path}`;
-  const init = { method, headers: { 'Content-Type': 'application/json' } };
+  const headers = { 'Content-Type': 'application/json' };
+  if (API_TOKEN) headers['Authorization'] = `Bearer ${API_TOKEN}`;
+  const init = { method, headers };
   if (body !== undefined) init.body = JSON.stringify(body);
   const res = await fetch(url, init);
   if (res.status === 204) return { ok: true, status: 204 };

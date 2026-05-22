@@ -279,11 +279,12 @@ function Pricing({ billing, onBilling }: { billing: BillingCycle; onBilling: (b:
           ctaHref="/board"
           ctaVariant="outline"
           features={[
-            { ok: true,  text: 'Max 3 projecten' },
-            { ok: true,  text: 'Max 50 issues totaal' },
+            { ok: true,  text: '1 gebruiker (solo gebruik)' },
+            { ok: true,  text: 'Max 3 projecten · max 50 issues' },
             { ok: true,  text: 'Basis Kanban: Backlog / Todo / In Progress / Done' },
             { ok: true,  text: 'Handmatige GitHub-koppeling (branch + PR-URL invoeren)' },
             { ok: true,  text: 'Activity log (laatste 7 dagen)' },
+            { ok: false, text: 'Meerdere gebruikers / team' },
             { ok: false, text: 'MCP-server voor Claude Code' },
             { ok: false, text: 'GitHub webhook & auto status-transitions' },
             { ok: false, text: 'Cycles (sprints)' },
@@ -305,6 +306,7 @@ function Pricing({ billing, onBilling }: { billing: BillingCycle; onBilling: (b:
           ctaDisabled
           ctaSubLabel="Stripe-integratie volgt"
           features={[
+            { ok: true, text: 'Meerdere gebruikers / team samenwerking', strong: true },
             { ok: true, text: 'Onbeperkt projecten + issues', strong: true },
             { ok: true, text: 'Alle 7 statussen (incl. Triage, In Review, Cancelled)' },
             { ok: true, text: 'MCP-server — 20 tools voor Claude Code', strong: true },

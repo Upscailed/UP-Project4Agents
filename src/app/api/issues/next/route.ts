@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getNextIssue } from '@/lib/db';
+import { requireAuth, isAuthed } from '@/lib/auth';
 
 /**
  * GET /api/issues/next?assignee=agent&project_id=...
  * Geeft de hoogst-prioritaire issue die niet geblokkeerd is.
  */
 export async function GET(req: NextRequest) {
+  const auth = await requireAuth(req); if (!isAuthed(auth)) return auth;
   try {
     const sp = req.nextUrl.searchParams;
     const issue = getNextIssue({

@@ -32,6 +32,33 @@ npm run dev
 
 De app draait op `http://localhost:3400`.
 
+## Authenticatie
+
+De app heeft login. Bij eerste run is `/api/me` een leeg user-state — open `/login` en je krijgt een
+signup-formulier. **De eerste user wordt automatisch admin.** Daarna kunnen extra users zich registreren
+of door admin worden aangemaakt.
+
+Sessies via httpOnly cookie (30 dagen). Wachtwoorden: scrypt-hash (Node native, geen externe deps).
+
+### Voor MCP/CLI: API-token
+
+De MCP-server praat met de API zonder browser-cookie — die gebruikt een Bearer-token:
+
+```bash
+# 1. genereer een token
+openssl rand -hex 32
+
+# 2. zet 'm in .env.local
+echo "P4A_API_TOKEN=jouw-random-token" >> .env.local
+
+# 3. herstart dev-server
+npm run dev
+
+# 4. MCP-server pakt 'm automatisch op via .mcp.json
+```
+
+De API accepteert dan zowel cookie-sessie als `Authorization: Bearer <token>`.
+
 ## MCP-server installeren in Claude Code
 
 **Voor dit project (aanbevolen):** `.mcp.json` staat al in de repo. Claude Code laadt 'm

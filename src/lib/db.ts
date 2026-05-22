@@ -33,6 +33,16 @@ function getDb(): Database.Database {
 
 function initSchema(db: Database.Database) {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      avatar_url TEXT DEFAULT '',
+      role TEXT DEFAULT 'member',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS teams (
       id TEXT PRIMARY KEY,
       key TEXT NOT NULL UNIQUE,
@@ -273,6 +283,34 @@ function logActivity(
     type,
     JSON.stringify(payload),
   );
+}
+
+// ── Users ──
+
+export function listUsers(): import('./types').SafeUser[] {
+  return getDb().prepare(`SELECT id, email, name, avatar_url, role FROM users ORDER BY created_at ASC`).all() as any;
+}
+
+export function getUserById(id: string): import('./types').User | undefined {
+  return getDb().prepare(`SELECT * FROM users WHERE id = ?`).get(id) as any;
+}
+
+export function getUserByEmail(email: string): import('./types').User | undefined {
+  return getDb().prepare(`SELECT * FROM users WHERE LOWER(email) = LOWER(?)`).get(email) as any;
+}
+
+export function createUser(input: { email: string; name: string; password_hash: string; avatar_url?: string }): import('./types').SafeUser {
+  const db = getDb();
+  const id = uuidv4();
+  const userCount = (db.prepare(`SELECT COUNT(*) as c FROM users`).get() as any).c;
+  const role = userCount === 0 ? 'admin' : 'member';  // eerste user = admin
+  db.prepare(`INSERT INTO users (id, email, name, password_hash, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(id, input.email, input.name, input.password_hash, input.avatar_url || '', role);
+  return db.prepare(`SELECT id, email, name, avatar_url, role FROM users WHERE id = ?`).get(id) as any;
+}
+
+export function userCount(): number {
+  return (getDb().prepare(`SELECT COUNT(*) as c FROM users`).get() as any).c;
 }
 
 // ── Teams ──
