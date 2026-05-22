@@ -7,3 +7,4 @@ data/
 .archive/
 tsconfig.tsbuildinfo
 supabase/.temp/
+.vercel
