@@ -5,7 +5,7 @@
       "args": [
         "-y",
         "mcp-remote",
-        "https://up-project4agents.vercel.app/api/mcp",
+        "https://project4agents.upscailed.nl/api/mcp",
         "--header",
         "Authorization:${P4A_AUTH}"
       ],
