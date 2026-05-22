@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { listIssues, createIssue, getIssue, updateIssue, deleteIssue, listSubIssues } from '@/lib/db';
+import { listIssues, createIssue, getIssue, updateIssue, deleteIssue, listSubIssues, getProject } from '@/lib/db';
 import { requireAuth, isAuthed } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
@@ -14,7 +14,16 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ error: 'Issue hoort bij andere workspace' }, { status: 403 });
       }
       const subs = await listSubIssues(issue.id);
-      return NextResponse.json({ ...issue, sub_issues: subs });
+      const project = await getProject(issue.project_id);
+      return NextResponse.json({
+        ...issue,
+        sub_issues: subs,
+        project: project ? {
+          id: project.id, name: project.name, color: project.color,
+          github_repo: project.github_repo || null,
+          repo_link: project.github_repo ? `https://github.com/${project.github_repo}` : null,
+        } : null,
+      });
     }
     const splitMulti = (key: string) => {
       const v = sp.get(key);

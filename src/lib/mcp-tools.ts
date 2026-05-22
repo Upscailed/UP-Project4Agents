@@ -3,7 +3,7 @@
  * Gedeeld tussen stdio-server en HTTP-endpoint.
  */
 import {
-  listProjects, createProject,
+  listProjects, createProject, getProject,
   listIssues, getIssue, createIssue, updateIssue, deleteIssue,
   getNextIssue, claimIssue, generateBranchName,
   listComments, createComment,
@@ -29,7 +29,9 @@ export const MCP_TOOLS = [
         parent_issue_id: { type: 'string' },
         search: { type: 'string' },
       } } },
-  { name: 'get_issue', description: 'Haal één issue op met sub-issues. Accepteert UUID of identifier (UP-42).',
+  { name: 'get_issue', description: 'Haal één issue op met sub-issues + parent-project (incl. github_repo). Accepteert UUID of identifier (UP-42). Belangrijk: kijk naar project.github_repo om te weten welke GitHub-repo bij dit issue hoort. Als die leeg is, vraag de user bij welke repo het hoort voor je een branch maakt.',
+    inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
+  { name: 'get_project', description: 'Haal een project op (incl. github_repo). Handig om te weten welke GitHub-repo bij een project hoort.',
     inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } } },
   { name: 'get_next_issue', description: 'Volgende taak: hoogste prio, niet geblokkeerd.',
     inputSchema: { type: 'object', properties: { assignee: { type: 'string' }, project_id: { type: 'string' } } } },
@@ -65,7 +67,7 @@ export const MCP_TOOLS = [
       properties: { issue_id: { type: 'string' }, author: { type: 'string' }, body: { type: 'string' } } } },
   { name: 'list_comments', description: 'Comments van een issue.',
     inputSchema: { type: 'object', required: ['issue_id'], properties: { issue_id: { type: 'string' } } } },
-  { name: 'get_branch_name', description: 'Branch-naam suggestie: prefix/up-42-titel-slug.',
+  { name: 'get_branch_name', description: 'Branch-naam suggestie incl. complete git-commando\'s en repo-info. Returnt: branch_name, repo (owner/repo of null), clone_url, git_commands (array van shell-commando\'s om de branch op te zetten). Als project.github_repo leeg is, returnt 't alleen de branch-naam — vraag dan eerst de user welke repo.',
     inputSchema: { type: 'object', required: ['id'],
       properties: { id: { type: 'string' }, prefix: { type: 'string' } } } },
   { name: 'link_issues', description: 'Koppel twee issues (blocks/blocked_by/relates_to/duplicates).',
@@ -118,7 +120,27 @@ export async function executeToolByName(name: string, args: any): Promise<any> {
       const issue = await getIssue(args.id);
       if (!issue) throw new Error('Issue not found');
       const subs = await listSubIssues(issue.id);
-      return { ...issue, sub_issues: subs };
+      const project = await getProject(issue.project_id);
+      return {
+        ...issue,
+        sub_issues: subs,
+        project: project ? {
+          id: project.id,
+          name: project.name,
+          color: project.color,
+          github_repo: project.github_repo || null,
+          repo_link: project.github_repo ? `https://github.com/${project.github_repo}` : null,
+        } : null,
+      };
+    }
+    case 'get_project': {
+      const p = await getProject(args.id);
+      if (!p) throw new Error('Project not found');
+      return {
+        ...p,
+        github_repo: p.github_repo || null,
+        repo_link: p.github_repo ? `https://github.com/${p.github_repo}` : null,
+      };
     }
     case 'get_next_issue':
       return await getNextIssue({ assignee: args.assignee, project_id: args.project_id });
@@ -139,7 +161,36 @@ export async function executeToolByName(name: string, args: any): Promise<any> {
       const issue = await getIssue(args.id);
       if (!issue) throw new Error('Issue not found');
       const branch = await generateBranchName(args.id, args.prefix);
-      return { identifier: issue.identifier, branch_name: branch };
+      const project = await getProject(issue.project_id);
+      const repo = project?.github_repo || null;
+
+      if (!repo) {
+        return {
+          identifier: issue.identifier,
+          branch_name: branch,
+          repo: null,
+          guidance: `Dit project (${project?.name || 'onbekend'}) heeft nog geen GitHub-repo gekoppeld. Vraag de user welke repo bij dit project hoort vóór je een branch maakt. De user kan 't toevoegen via Settings → Project bewerken, of je kunt 't via update_project zelf zetten.`,
+        };
+      }
+
+      return {
+        identifier: issue.identifier,
+        branch_name: branch,
+        repo,
+        repo_link: `https://github.com/${repo}`,
+        clone_url: `git@github.com:${repo}.git`,
+        clone_url_https: `https://github.com/${repo}.git`,
+        git_commands: [
+          `# vanuit een bestaande clone van ${repo}:`,
+          `git fetch origin && git checkout main && git pull`,
+          `git checkout -b ${branch}`,
+          `# ...maak je wijzigingen, daarna:`,
+          `git push -u origin ${branch}`,
+          `gh pr create --title "${issue.identifier}: ${issue.title}" --body "Fixes ${issue.identifier}"`,
+        ],
+        pr_title_suggestion: `${issue.identifier}: ${issue.title}`,
+        pr_body_suggestion: `Fixes ${issue.identifier}\n\n${issue.description || ''}`,
+      };
     }
 
     case 'link_issues': {
