@@ -15,9 +15,23 @@ import {
 
 export const MCP_TOOLS = [
   { name: 'list_projects', description: 'Lijst alle projecten op.', inputSchema: { type: 'object', properties: {} } },
-  { name: 'create_project', description: 'Maak een nieuw project aan.',
+  { name: 'create_project', description: 'Maak een nieuw project aan. Geef github_repo (owner/repo) mee zodat issues direct repo-aware zijn.',
     inputSchema: { type: 'object', required: ['name'],
-      properties: { name: { type: 'string' }, description: { type: 'string' }, color: { type: 'string' } } } },
+      properties: {
+        name: { type: 'string' },
+        description: { type: 'string' },
+        color: { type: 'string' },
+        github_repo: { type: 'string', description: 'GitHub repo, bv "Upscailed/sales-flow"' },
+      } } },
+  { name: 'update_project', description: 'Werk een project bij — vooral handig om github_repo te zetten bij een bestaand project.',
+    inputSchema: { type: 'object', required: ['id'],
+      properties: {
+        id: { type: 'string' },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        color: { type: 'string' },
+        github_repo: { type: 'string' },
+      } } },
   { name: 'list_issues', description: 'Lijst issues op met filters.',
     inputSchema: { type: 'object',
       properties: {
@@ -104,6 +118,11 @@ export async function executeToolByName(name: string, args: any): Promise<any> {
   switch (name) {
     case 'list_projects': return await listProjects();
     case 'create_project': return await createProject(args);
+    case 'update_project': {
+      const { id, ...patch } = args;
+      const { updateProject } = await import('./db');
+      return await updateProject(id, patch);
+    }
 
     case 'list_issues': {
       const filters: any = {};
