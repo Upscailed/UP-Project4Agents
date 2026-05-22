@@ -67,7 +67,7 @@ export const MCP_TOOLS = [
       properties: { issue_id: { type: 'string' }, author: { type: 'string' }, body: { type: 'string' } } } },
   { name: 'list_comments', description: 'Comments van een issue.',
     inputSchema: { type: 'object', required: ['issue_id'], properties: { issue_id: { type: 'string' } } } },
-  { name: 'get_branch_name', description: 'Branch-naam suggestie incl. complete git-commando\'s en repo-info. Returnt: branch_name, repo (owner/repo of null), clone_url, git_commands (array van shell-commando\'s om de branch op te zetten). Als project.github_repo leeg is, returnt 't alleen de branch-naam — vraag dan eerst de user welke repo.',
+  { name: 'get_branch_name', description: `Branch-naam suggestie incl. complete git-commandos en repo-info. Returnt: branch_name, repo (owner/repo of null), clone_url, git_commands (array van shell-commandos om de branch op te zetten). Als project.github_repo leeg is, returnt alleen de branch-naam zonder commandos. Vraag dan eerst de user welke repo erbij hoort.`,
     inputSchema: { type: 'object', required: ['id'],
       properties: { id: { type: 'string' }, prefix: { type: 'string' } } } },
   { name: 'link_issues', description: 'Koppel twee issues (blocks/blocked_by/relates_to/duplicates).',
