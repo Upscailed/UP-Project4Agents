@@ -75,8 +75,53 @@ class LazySql implements PromiseLike<any[] & { count: number }> {
   }
 }
 
-// ── HTTP executor ──
+// ── Cache + dedupe + retry voor Management API rate-limit (429) ──
+// Supabase Management API heeft ~60 req/min. Bij elke pageload 5+ queries
+// raken we snel de limiet. Drie technieken:
+//   1. Cache van SELECT-only queries (TTL 3s)
+//   2. Dedupe van identieke in-flight queries (multi-tab/parallel calls delen 1 fetch)
+//   3. Retry met exponentiële backoff bij 429
+const CACHE_TTL_MS = 3000;
+const _cache = new Map<string, { value: any[] & { count: number }; expires: number }>();
+const _inflight = new Map<string, Promise<any[] & { count: number }>>();
+
+function isReadOnly(query: string): boolean {
+  const trimmed = query.trim().toUpperCase();
+  return trimmed.startsWith('SELECT') || trimmed.startsWith('WITH');
+}
+
 async function executeSql(query: string): Promise<any[] & { count: number }> {
+  const cacheKey = query;
+
+  // 1. Cache hit voor read-only
+  if (isReadOnly(query)) {
+    const cached = _cache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) {
+      return cached.value;
+    }
+  }
+
+  // 2. Dedupe in-flight identieke queries
+  const existing = _inflight.get(cacheKey);
+  if (existing) return existing;
+
+  const promise = _executeWithRetry(query);
+  _inflight.set(cacheKey, promise);
+  try {
+    const result = await promise;
+    if (isReadOnly(query)) {
+      _cache.set(cacheKey, { value: result, expires: Date.now() + CACHE_TTL_MS });
+    } else {
+      // Mutation: clear cache zodat volgende reads vers zijn
+      _cache.clear();
+    }
+    return result;
+  } finally {
+    _inflight.delete(cacheKey);
+  }
+}
+
+async function _executeWithRetry(query: string, attempt = 0): Promise<any[] & { count: number }> {
   const PAT = env('SUPABASE_ACCESS_TOKEN');
   const REF = env('SUPABASE_PROJECT_REF');
   const url = `${API_BASE}/${REF}/database/query`;
@@ -86,6 +131,14 @@ async function executeSql(query: string): Promise<any[] & { count: number }> {
     headers: { 'Authorization': `Bearer ${PAT}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
   });
+
+  // 429: backoff + retry
+  if (res.status === 429 && attempt < 4) {
+    const delay = Math.min(2000, 200 * Math.pow(2, attempt)) + Math.random() * 100;
+    await new Promise(r => setTimeout(r, delay));
+    return _executeWithRetry(query, attempt + 1);
+  }
+
   const text = await res.text();
   if (!res.ok) {
     let msg = text;
@@ -97,7 +150,6 @@ async function executeSql(query: string): Promise<any[] & { count: number }> {
   catch { throw new Error(`Geen JSON response: ${text.slice(0, 200)}`); }
 
   const rows: any[] = Array.isArray(parsed) ? parsed : [];
-  // Attach .count zoals postgres.js doet
   (rows as any).count = rows.length;
   return rows as any[] & { count: number };
 }
