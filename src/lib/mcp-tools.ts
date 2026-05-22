@@ -15,22 +15,22 @@ import {
 
 export const MCP_TOOLS = [
   { name: 'list_projects', description: 'Lijst alle projecten op.', inputSchema: { type: 'object', properties: {} } },
-  { name: 'create_project', description: 'Maak een nieuw project aan. Geef github_repo (owner/repo) mee zodat issues direct repo-aware zijn.',
+  { name: 'create_project', description: 'Maak een nieuw project aan. BELANGRIJK: vraag de user ALTIJD naar de GitHub-repository (in owner/repo format, bv. "Upscailed/sales-flow") VOOR je het project aanmaakt — anders werken branch-naam-suggesties, auto-PR-linking en webhook-koppeling niet. Als de user geen repo opgeeft, vraag expliciet. De response bevat een warning-veld als github_repo leeg is.',
     inputSchema: { type: 'object', required: ['name'],
       properties: {
         name: { type: 'string' },
         description: { type: 'string' },
         color: { type: 'string' },
-        github_repo: { type: 'string', description: 'GitHub repo, bv "Upscailed/sales-flow"' },
+        github_repo: { type: 'string', description: 'STERK AANBEVOLEN. Format: owner/repo (bv "Upscailed/sales-flow"). Vraag user als je niet zeker weet.' },
       } } },
-  { name: 'update_project', description: 'Werk een project bij — vooral handig om github_repo te zetten bij een bestaand project.',
+  { name: 'update_project', description: 'Werk een project bij. Gebruik dit om alsnog github_repo te zetten op een bestaand project waar 't ontbreekt.',
     inputSchema: { type: 'object', required: ['id'],
       properties: {
         id: { type: 'string' },
         name: { type: 'string' },
         description: { type: 'string' },
         color: { type: 'string' },
-        github_repo: { type: 'string' },
+        github_repo: { type: 'string', description: 'GitHub repo in owner/repo format' },
       } } },
   { name: 'list_issues', description: 'Lijst issues op met filters.',
     inputSchema: { type: 'object',
@@ -52,7 +52,7 @@ export const MCP_TOOLS = [
   { name: 'claim_issue', description: 'Atomic claim: status=in_progress + assignee + comment.',
     inputSchema: { type: 'object', required: ['id', 'assignee'],
       properties: { id: { type: 'string' }, assignee: { type: 'string' }, comment: { type: 'string' } } } },
-  { name: 'create_issue', description: 'Maak een nieuwe issue (sub via parent_issue_id).',
+  { name: 'create_issue', description: 'Maak een nieuwe issue. BELANGRIJK: controleer dat het parent-project een github_repo heeft VOOR je veel issues aanmaakt. Zonder repo werkt branch-naam-suggesties en PR-linking niet. Response bevat warning-veld als project geen repo heeft. Gebruik sub via parent_issue_id voor sub-issues.',
     inputSchema: { type: 'object', required: ['project_id', 'title'],
       properties: {
         project_id: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' },
@@ -117,7 +117,16 @@ export async function executeToolByName(name: string, args: any): Promise<any> {
   args = args || {};
   switch (name) {
     case 'list_projects': return await listProjects();
-    case 'create_project': return await createProject(args);
+    case 'create_project': {
+      const created = await createProject(args);
+      if (!created.github_repo || !created.github_repo.trim()) {
+        return {
+          ...created,
+          warning: `⚠️ AGENT: dit project heeft GEEN github_repo. Vraag de user NU naar de GitHub-repo (owner/repo format) en gebruik update_project om hem in te stellen. Zonder repo werkt branch-naam-suggesties, auto-PR-linking en webhook-strict-mode niet. Het is dus belangrijk om dit eerst af te ronden voor je verder werkt met dit project.`,
+        };
+      }
+      return created;
+    }
     case 'update_project': {
       const { id, ...patch } = args;
       const { updateProject } = await import('./db');
@@ -165,7 +174,18 @@ export async function executeToolByName(name: string, args: any): Promise<any> {
       return await getNextIssue({ assignee: args.assignee, project_id: args.project_id });
     case 'claim_issue':
       return await claimIssue(args.id, { assignee: args.assignee, comment: args.comment });
-    case 'create_issue': return await createIssue(args);
+    case 'create_issue': {
+      const created = await createIssue(args);
+      // Check of het parent-project een github_repo heeft
+      const parentProject = await getProject(created.project_id);
+      if (parentProject && (!parentProject.github_repo || !parentProject.github_repo.trim())) {
+        return {
+          ...created,
+          warning: `⚠️ AGENT: het project '${parentProject.name}' van deze issue heeft GEEN github_repo. Branch-naam en PR-linking werken niet. Vraag de user naar de GitHub-repo en gebruik update_project (id="${parentProject.id}") om 'm te zetten voor je verder gaat.`,
+        };
+      }
+      return created;
+    }
     case 'update_issue': {
       const { id, ...patch } = args;
       return await updateIssue(id, patch);
