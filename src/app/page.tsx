@@ -1,1111 +1,537 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState } from 'react';
+import Link from 'next/link';
 import { Icon, IconName } from '@/components/Icon';
 
-// ── Types ──
-type IssueStatus = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
-type IssuePriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
-type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicates' | 'duplicate_of';
+type BillingCycle = 'monthly' | 'yearly';
 
-interface Project { id: string; name: string; description: string; color: string; team_id: string | null; }
-interface Issue {
-  id: string; identifier: string; project_id: string; team_id: string | null;
-  title: string; description: string;
-  status: IssueStatus; priority: IssuePriority; labels: string;
-  acceptance_criteria: string; assignee: string;
-  parent_issue_id: string | null; estimate: number | null; due_date: string | null;
-  cycle_id: string | null;
-  github_branch: string; github_pr_url: string; github_pr_number: number | null;
-  created_at: string; updated_at: string; started_at: string | null; completed_at: string | null;
-  sub_issues?: Issue[];
-}
-interface Comment { id: string; issue_id: string; author: string; body: string; created_at: string; }
-interface Cycle { id: string; name: string; starts_at: string; ends_at: string; status: 'upcoming' | 'active' | 'completed'; }
-interface IssueLinkRow {
-  id: string; from_issue_id: string; to_issue_id: string;
-  link_type: LinkType; from?: Issue; to?: Issue;
-}
-interface Activity { id: string; issue_id: string | null; project_id: string | null; actor: string; type: string; payload: any; created_at: string; }
-interface View { id: string; name: string; description: string; filter: any; icon: string; sort_order: number; }
-
-const COLUMNS: { status: IssueStatus; label: string; color: string; icon: IconName }[] = [
-  { status: 'triage',      label: 'Triage',      color: '#EC4899', icon: 'status_triage' },
-  { status: 'backlog',     label: 'Backlog',     color: '#6B7280', icon: 'status_backlog' },
-  { status: 'todo',        label: 'Todo',        color: '#94A3B8', icon: 'status_todo' },
-  { status: 'in_progress', label: 'In Progress', color: '#F59E0B', icon: 'status_in_progress' },
-  { status: 'in_review',   label: 'In Review',   color: '#A78BFA', icon: 'status_in_review' },
-  { status: 'done',        label: 'Done',        color: '#10B981', icon: 'status_done' },
-];
-
-const PRIORITIES: Record<IssuePriority, { label: string; icon: IconName; color: string }> = {
-  urgent: { label: 'Urgent', icon: 'priority_urgent', color: '#EF4444' },
-  high:   { label: 'Hoog',   icon: 'priority_high',   color: '#FB923C' },
-  medium: { label: 'Medium', icon: 'priority_medium', color: '#FBBF24' },
-  low:    { label: 'Laag',   icon: 'priority_low',    color: '#60A5FA' },
-  none:   { label: 'Geen',   icon: 'priority_none',   color: '#6B7280' },
-};
-
-const LINK_LABELS: Record<LinkType, string> = {
-  blocks: 'Blokkeert',
-  blocked_by: 'Geblokkeerd door',
-  relates_to: 'Gerelateerd aan',
-  duplicates: 'Dupliceert',
-  duplicate_of: 'Duplicaat van',
-};
-
-const PROJECT_COLORS = ['#8B5CF6','#10B981','#F59E0B','#60A5FA','#FB923C','#EF4444','#EC4899','#14B8A6','#F472B6','#A78BFA'];
-
-// Map oude emoji-icoonstrings naar nieuwe Icon-namen (voor saved views in DB).
-const VIEW_ICON_MAP: Record<string, IconName> = {
-  '◑': 'status_in_progress',
-  '🤖': 'agent',
-  '↑': 'priority_high',
-  '⊙': 'status_triage',
-  '●': 'status_done',
-  '⊟': 'views',
-};
-function viewIcon(s: string): IconName {
-  if (s && s.startsWith('status_') || s?.startsWith('priority_') || s in {agent:1,user:1,views:1,projects:1}) return s as IconName;
-  return VIEW_ICON_MAP[s] || 'views';
-}
-
-const api = {
-  get: <T,>(url: string): Promise<T> => fetch(url).then(r => r.json()),
-  post: <T,>(url: string, body: any): Promise<T> =>
-    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()),
-  patch: <T,>(url: string, body: any): Promise<T> =>
-    fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()),
-  del: (url: string) => fetch(url, { method: 'DELETE' }).then(r => r.json()),
-};
-
-type Tab = 'board' | 'cycles' | 'activity';
-
-export default function Board() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [issues, setIssues] = useState<Issue[]>([]);
-  const [cycles, setCycles] = useState<Cycle[]>([]);
-  const [views, setViews] = useState<View[]>([]);
-  const [activity, setActivity] = useState<Activity[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string | null>(null);
-  const [selectedView, setSelectedView] = useState<string | null>(null);
-  const [selectedIssue, setSelectedIssue] = useState<Issue | null>(null);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [links, setLinks] = useState<IssueLinkRow[]>([]);
-  const [showNewProject, setShowNewProject] = useState(false);
-  const [showNewIssue, setShowNewIssue] = useState<IssueStatus | null>(null);
-  const [showNewCycle, setShowNewCycle] = useState(false);
-  const [search, setSearch] = useState('');
-  const [dragIssue, setDragIssue] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('board');
-
-  const loadProjects = useCallback(() => api.get<Project[]>('/api/projects').then(setProjects), []);
-  const loadCycles = useCallback(() => api.get<Cycle[]>('/api/cycles').then(setCycles), []);
-  const loadViews = useCallback(() => api.get<View[]>('/api/views').then(setViews), []);
-  const loadActivity = useCallback(() => api.get<Activity[]>('/api/activity?limit=200').then(setActivity), []);
-
-  const loadIssues = useCallback(() => {
-    const params = new URLSearchParams();
-    if (selectedProject) params.set('project_id', selectedProject);
-    if (search) params.set('search', search);
-
-    if (selectedView) {
-      const view = views.find(v => v.id === selectedView);
-      if (view) {
-        const f = view.filter || {};
-        if (f.status) params.set('status', Array.isArray(f.status) ? f.status.join(',') : f.status);
-        if (f.priority) params.set('priority', Array.isArray(f.priority) ? f.priority.join(',') : f.priority);
-        if (f.assignee !== undefined) params.set('assignee', f.assignee);
-        if (f.cycle_id) params.set('cycle_id', f.cycle_id);
-      }
-    }
-    api.get<Issue[]>(`/api/issues?${params}`).then(setIssues);
-  }, [selectedProject, selectedView, search, views]);
-
-  useEffect(() => { loadProjects(); loadCycles(); loadViews(); }, [loadProjects, loadCycles, loadViews]);
-  useEffect(() => { loadIssues(); }, [loadIssues]);
-  useEffect(() => { if (tab === 'activity') loadActivity(); }, [tab, loadActivity]);
-
-  const openIssue = async (issue: Issue) => {
-    const full = await api.get<Issue>(`/api/issues?id=${issue.id}`);
-    setSelectedIssue(full);
-    const [c, l] = await Promise.all([
-      api.get<Comment[]>(`/api/comments?issue_id=${issue.id}`),
-      api.get<IssueLinkRow[]>(`/api/issues/${issue.id}/links`),
-    ]);
-    setComments(c); setLinks(l);
-  };
-
-  const updateIssueField = async (id: string, field: string, value: any) => {
-    const updated = await api.patch<Issue>(`/api/issues?id=${id}`, { [field]: value });
-    setIssues(prev => prev.map(i => i.id === id ? updated : i));
-    if (selectedIssue?.id === id) setSelectedIssue({ ...selectedIssue, ...updated });
-  };
-
-  const handleDrop = (status: IssueStatus) => {
-    if (dragIssue) {
-      updateIssueField(dragIssue, 'status', status);
-      setDragIssue(null);
-    }
-  };
-
-  const issuesForColumn = (status: IssueStatus) => issues.filter(i => i.status === status);
-
-  const activeCycle = useMemo(() => cycles.find(c => c.status === 'active'), [cycles]);
+export default function Landing() {
+  const [billing, setBilling] = useState<BillingCycle>('monthly');
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: 'var(--bg)' }}>
-      {/* ── Sidebar ── */}
-      <aside style={{
-        width: 280, borderRight: '1px solid var(--border)', background: 'var(--bg-surface)',
-        display: 'flex', flexDirection: 'column', flexShrink: 0,
-      }}>
-        {/* Logo */}
-        <div style={{ padding: '20px 16px 12px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14,
-              letterSpacing: '-0.5px',
-            }}>UP</div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.2px' }}>Project4Agents</div>
-              <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>AI Project Management</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div style={{ padding: '12px 12px 8px', position: 'relative' }}>
-          <span style={{
-            position: 'absolute', left: 22, top: 19, color: 'var(--text-dim)',
-            pointerEvents: 'none', display: 'flex',
-          }}><Icon name="search" size={13} /></span>
-          <input
-            type="text" placeholder="Zoek issues..."
-            value={search} onChange={e => setSearch(e.target.value)}
-            style={{
-              width: '100%', padding: '8px 12px 8px 30px', borderRadius: 6,
-              border: '1px solid var(--border)', background: 'var(--bg-card)',
-              color: 'var(--text)', fontSize: 13, outline: 'none',
-            }}
-          />
-        </div>
-
-        {/* Tabs */}
-        <div style={{ display: 'flex', padding: '0 8px', gap: 0, borderBottom: '1px solid var(--border)' }}>
-          {([
-            { id: 'board', icon: 'board' as IconName, label: 'Board' },
-            { id: 'cycles', icon: 'cycles' as IconName, label: 'Cycles' },
-            { id: 'activity', icon: 'activity' as IconName, label: 'Activity' },
-          ]).map(t => (
-            <button key={t.id} onClick={() => setTab(t.id as Tab)} style={{
-              flex: 1, padding: '8px 8px',
-              border: 'none', borderBottom: tab === t.id ? '2px solid var(--accent)' : '2px solid transparent',
-              background: 'transparent', color: tab === t.id ? 'var(--text)' : 'var(--text-dim)',
-              fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px',
-              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            }}><Icon name={t.icon} size={12} /> {t.label}</button>
-          ))}
-        </div>
-
-        <div style={{ padding: '4px 8px', flex: 1, overflowY: 'auto' }}>
-          {/* Views */}
-          <SidebarSection title="Views">
-            {views.map(v => (
-              <SidebarItem key={v.id}
-                active={selectedView === v.id}
-                onClick={() => { setSelectedView(selectedView === v.id ? null : v.id); setSelectedProject(null); }}
-                color="var(--text-muted)"
-                left={<Icon name={viewIcon(v.icon)} size={13} />}
-                label={v.name}
-              />
-            ))}
-          </SidebarSection>
-
-          {/* Projects */}
-          <SidebarSection title="Projecten" action={
-            <button onClick={() => setShowNewProject(true)} style={iconBtnStyle()}>
-              <Icon name="plus" size={13} />
-            </button>
-          }>
-            <SidebarItem
-              active={!selectedProject && !selectedView}
-              onClick={() => { setSelectedProject(null); setSelectedView(null); }}
-              color="var(--text-muted)"
-              left={<Icon name="projects" size={13} />}
-              label="Alle issues"
-              right={String(issues.length)}
-            />
-            {projects.map(p => (
-              <SidebarItem key={p.id}
-                active={selectedProject === p.id}
-                onClick={() => { setSelectedProject(p.id); setSelectedView(null); }}
-                color={p.color}
-                left={<span style={{
-                  width: 8, height: 8, borderRadius: '50%', background: p.color, display: 'inline-block',
-                }} />}
-                label={p.name}
-                right={String(issues.filter(i => i.project_id === p.id).length)}
-              />
-            ))}
-          </SidebarSection>
-
-          {/* Active cycle */}
-          {activeCycle && (
-            <SidebarSection title="Active cycle">
-              <div style={{
-                padding: 10, borderRadius: 6, background: 'var(--bg-card)',
-                border: '1px solid var(--border)', fontSize: 12,
-                display: 'flex', alignItems: 'center', gap: 8,
-              }}>
-                <Icon name="cycles" size={14} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600 }}>{activeCycle.name}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>
-                    {fmtDate(activeCycle.starts_at)} → {fmtDate(activeCycle.ends_at)}
-                  </div>
-                </div>
-              </div>
-            </SidebarSection>
-          )}
-        </div>
-
-        {/* Stats */}
-        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-dim)' }}>
-          <StatLine label="Totaal" value={issues.length} />
-          <StatLine label="In progress" value={issues.filter(i=>i.status==='in_progress').length} color="#F59E0B" />
-          <StatLine label="Done"        value={issues.filter(i=>i.status==='done').length}        color="#10B981" />
-        </div>
-      </aside>
-
-      {/* ── Main ── */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <header style={{
-          padding: '16px 24px', borderBottom: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}>
-          <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.2px' }}>
-            {selectedView ? views.find(v=>v.id===selectedView)?.name :
-             selectedProject ? projects.find(p => p.id === selectedProject)?.name :
-             tab === 'cycles' ? 'Cycles' : tab === 'activity' ? 'Activity log' : 'Alle issues'}
-          </h1>
-          <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
-            API: <code style={{ color: 'var(--accent)', background: 'var(--accent-glow)', padding: '2px 6px', borderRadius: 4 }}>
-              localhost:3400/api
-            </code>
-          </div>
-        </header>
-
-        {tab === 'board' && (
-          <div style={{ flex: 1, display: 'flex', gap: 0, overflowX: 'auto', padding: '16px 12px' }}>
-            {COLUMNS.map(col => {
-              const colIssues = issuesForColumn(col.status);
-              return (
-                <div key={col.status}
-                  onDragOver={e => { e.preventDefault(); (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card)'; }}
-                  onDragLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
-                  onDrop={e => { e.preventDefault(); (e.currentTarget as HTMLDivElement).style.background = 'transparent'; handleDrop(col.status); }}
-                  style={{
-                    flex: 1, minWidth: 240, display: 'flex', flexDirection: 'column',
-                    borderRight: '1px solid var(--border)', padding: '0 8px',
-                  }}
-                >
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px 12px',
-                    borderBottom: `2px solid ${col.color}22`,
-                  }}>
-                    <span style={{ color: col.color, display: 'inline-flex' }}><Icon name={col.icon} size={14} /></span>
-                    <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.1px' }}>{col.label}</span>
-                    <span style={{
-                      fontSize: 11, color: 'var(--text-dim)', background: 'var(--bg-card)',
-                      padding: '1px 6px', borderRadius: 10,
-                    }}>{colIssues.length}</span>
-                    <button onClick={() => setShowNewIssue(col.status)} style={iconBtnStyle()}>
-                      <Icon name="plus" size={13} />
-                    </button>
-                  </div>
-
-                  <div style={{ flex: 1, overflowY: 'auto', paddingTop: 8 }}>
-                    {colIssues.map(issue => {
-                      const proj = projects.find(p => p.id === issue.project_id);
-                      const pri = PRIORITIES[issue.priority];
-                      const labels: string[] = (() => { try { return JSON.parse(issue.labels); } catch { return []; } })();
-                      return (
-                        <div key={issue.id}
-                          draggable
-                          onDragStart={() => setDragIssue(issue.id)}
-                          onClick={() => openIssue(issue)}
-                          style={{
-                            background: 'var(--bg-card)', borderRadius: 8,
-                            border: '1px solid var(--border)', padding: '10px 12px',
-                            marginBottom: 6, cursor: 'pointer',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                            <span style={{ color: pri.color, display: 'inline-flex' }}><Icon name={pri.icon} size={12} /></span>
-                            <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'monospace' }}>{issue.identifier}</span>
-                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {issue.github_pr_url && <span title={`PR #${issue.github_pr_number}`} style={{ color: 'var(--text-dim)', display: 'inline-flex' }}><Icon name="pr" size={11} /></span>}
-                              {issue.estimate != null && (
-                                <span style={{ fontSize: 10, color: 'var(--text-dim)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                  <Icon name="estimate" size={10} /> {issue.estimate}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.4, marginBottom: 8 }}>{issue.title}</div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            {proj && (
-                              <span style={{
-                                fontSize: 10, color: proj.color, background: `${proj.color}15`,
-                                padding: '2px 6px', borderRadius: 4, fontWeight: 500,
-                              }}>{proj.name}</span>
-                            )}
-                            {issue.assignee && (
-                              <span style={{
-                                fontSize: 10, color: 'var(--accent)', background: 'var(--accent-glow)',
-                                padding: '2px 6px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 500,
-                              }}>
-                                <Icon name={assigneeIcon(issue.assignee)} size={9} />
-                                {issue.assignee}
-                              </span>
-                            )}
-                            {labels.slice(0, 3).map((l, i) => (
-                              <span key={i} style={{
-                                fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg)',
-                                padding: '2px 6px', borderRadius: 4,
-                              }}>{l}</span>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {showNewIssue === col.status && (
-                      <NewIssueInline
-                        status={col.status}
-                        projects={projects}
-                        selectedProject={selectedProject}
-                        onCreated={() => { setShowNewIssue(null); loadIssues(); }}
-                        onCancel={() => setShowNewIssue(null)}
-                      />
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {tab === 'cycles' && (
-          <CyclesView cycles={cycles} issues={issues} onCreate={() => setShowNewCycle(true)} />
-        )}
-
-        {tab === 'activity' && (
-          <ActivityView items={activity} />
-        )}
-      </main>
-
-      {selectedIssue && (
-        <IssueDetail
-          issue={selectedIssue}
-          projects={projects}
-          cycles={cycles}
-          comments={comments}
-          links={links}
-          allIssues={issues}
-          onUpdate={(field, value) => updateIssueField(selectedIssue.id, field, value)}
-          onAddComment={async (body) => {
-            await api.post('/api/comments', { issue_id: selectedIssue.id, body, author: 'user' });
-            const c = await api.get<Comment[]>(`/api/comments?issue_id=${selectedIssue.id}`);
-            setComments(c);
-          }}
-          onAddLink={async (to, link_type) => {
-            await api.post(`/api/issues/${selectedIssue.id}/links`, { to, link_type });
-            const l = await api.get<IssueLinkRow[]>(`/api/issues/${selectedIssue.id}/links`);
-            setLinks(l);
-          }}
-          onClaim={async (assignee) => {
-            const updated = await api.post<Issue>(`/api/issues/${selectedIssue.id}/claim`, { assignee });
-            setSelectedIssue({ ...selectedIssue, ...updated });
-            loadIssues();
-            const c = await api.get<Comment[]>(`/api/comments?issue_id=${selectedIssue.id}`);
-            setComments(c);
-          }}
-          onBranchName={async () => {
-            const r = await api.get<{ branch_name: string }>(`/api/issues/${selectedIssue.id}/branch-name`);
-            try { await navigator.clipboard.writeText(r.branch_name); alert(`Branch-naam gekopieerd:\n${r.branch_name}`); }
-            catch { alert(`Branch-naam: ${r.branch_name}`); }
-          }}
-          onDelete={async () => {
-            await api.del(`/api/issues?id=${selectedIssue.id}`);
-            setSelectedIssue(null); loadIssues();
-          }}
-          onClose={() => setSelectedIssue(null)}
-        />
-      )}
-
-      {showNewProject && (
-        <NewProjectModal
-          onCreated={() => { setShowNewProject(false); loadProjects(); }}
-          onClose={() => setShowNewProject(false)}
-        />
-      )}
-
-      {showNewCycle && (
-        <NewCycleModal
-          onCreated={() => { setShowNewCycle(false); loadCycles(); }}
-          onClose={() => setShowNewCycle(false)}
-        />
-      )}
+    <div style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh' }}>
+      <Nav />
+      <Hero />
+      <Features />
+      <Pricing billing={billing} onBilling={setBilling} />
+      <Faq />
+      <Footer />
     </div>
   );
 }
 
-// ── Sidebar helpers ──
-function SidebarSection({ title, action, children }: { title: string; action?: React.ReactNode; children?: React.ReactNode }) {
+// ── Nav ─────────────────────────────────────────────────────────
+function Nav() {
   return (
-    <div style={{ marginBottom: 8 }}>
-      <div style={{
-        fontSize: 10, fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase',
-        letterSpacing: '0.7px', padding: '10px 8px 4px', display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center',
-      }}>
-        <span>{title}</span>
-        {action}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function SidebarItem({ active, onClick, color, left, label, right }: {
-  active: boolean; onClick: () => void; color: string;
-  left: React.ReactNode; label: string; right?: string;
-}) {
-  return (
-    <button onClick={onClick} style={{
-      width: '100%', padding: '6px 8px', borderRadius: 6, border: 'none', textAlign: 'left',
-      background: active ? 'var(--accent-glow)' : 'transparent',
-      color: active ? color : 'var(--text-muted)',
-      cursor: 'pointer', fontSize: 13, fontWeight: 500, marginBottom: 1,
-      display: 'flex', alignItems: 'center', gap: 8,
+    <nav style={{
+      position: 'sticky', top: 0, zIndex: 50,
+      background: 'rgba(10,10,15,0.85)', backdropFilter: 'blur(12px)',
+      borderBottom: '1px solid var(--border)',
     }}>
-      <span style={{ display: 'inline-flex', width: 14, justifyContent: 'center' }}>{left}</span>
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      {right && <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>{right}</span>}
-    </button>
+      <div style={{
+        maxWidth: 1200, margin: '0 auto', padding: '14px 24px',
+        display: 'flex', alignItems: 'center', gap: 24,
+      }}>
+        <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'var(--text)' }}>
+          <div style={logoStyle()}>UP</div>
+          <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.2px' }}>Project4Agents</span>
+        </Link>
+        <div style={{ flex: 1 }} />
+        <a href="#features" style={navLink()}>Features</a>
+        <a href="#pricing" style={navLink()}>Pricing</a>
+        <a href="#faq" style={navLink()}>FAQ</a>
+        <a href="https://github.com/Upscailed/UP-Project4Agents" target="_blank" rel="noreferrer"
+          style={{ ...navLink(), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="github" size={14} /> GitHub
+        </a>
+        <Link href="/board" style={btnPrimary()}>
+          Open app <Icon name="arrow_right" size={12} style={{ marginLeft: 4 }} />
+        </Link>
+      </div>
+    </nav>
   );
 }
 
-function StatLine({ label, value, color }: { label: string; value: number; color?: string }) {
+// ── Hero ────────────────────────────────────────────────────────
+function Hero() {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-      <span>{label}</span><span style={{ color: color || 'var(--text-muted)' }}>{value}</span>
-    </div>
+    <section style={{ padding: '96px 24px 64px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
+      {/* gradient blob achtergrond */}
+      <div style={{
+        position: 'absolute', top: -200, left: '50%', transform: 'translateX(-50%)',
+        width: 800, height: 800, borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(139,92,246,0.18) 0%, rgba(236,72,153,0.10) 30%, transparent 70%)',
+        pointerEvents: 'none',
+      }} />
+
+      <div style={{ maxWidth: 880, margin: '0 auto', position: 'relative' }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '6px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+          background: 'var(--accent-glow)', color: 'var(--accent)', marginBottom: 24,
+          border: '1px solid rgba(139,92,246,0.3)',
+        }}>
+          <Icon name="agent" size={12} /> Built for AI agents — open source
+        </div>
+
+        <h1 style={{
+          fontSize: 'clamp(40px, 6vw, 64px)', fontWeight: 800, lineHeight: 1.05,
+          letterSpacing: '-1.5px', marginBottom: 20,
+        }}>
+          Linear voor je
+          <br />
+          <span style={{
+            background: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+          }}>AI-agents</span>
+        </h1>
+
+        <p style={{
+          fontSize: 18, lineHeight: 1.6, color: 'var(--text-muted)',
+          maxWidth: 620, margin: '0 auto 32px',
+        }}>
+          Kanban board, REST API en MCP-server in één. Claude Code en andere AI-agents
+          claimen taken, maken PRs, en updaten status — zonder jouw tussenkomst.
+        </p>
+
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 48 }}>
+          <Link href="/board" style={{ ...btnPrimary(), padding: '12px 24px', fontSize: 15 }}>
+            Probeer gratis <Icon name="arrow_right" size={14} style={{ marginLeft: 6 }} />
+          </Link>
+          <a href="#pricing" style={{ ...btnOutline(), padding: '12px 24px', fontSize: 15 }}>
+            Pricing bekijken
+          </a>
+        </div>
+
+        {/* App preview mockup */}
+        <AppPreview />
+      </div>
+    </section>
   );
 }
 
-// ── New issue inline ──
-function NewIssueInline({ status, projects, selectedProject, onCreated, onCancel }: {
-  status: IssueStatus; projects: Project[]; selectedProject: string | null;
-  onCreated: () => void; onCancel: () => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [projectId, setProjectId] = useState(selectedProject || projects[0]?.id || '');
-  const [priority, setPriority] = useState<IssuePriority>('none');
-
-  const submit = async () => {
-    if (!title.trim() || !projectId) return;
-    await api.post('/api/issues', { title, project_id: projectId, status, priority });
-    onCreated();
-  };
+function AppPreview() {
+  const cols = [
+    { label: 'Backlog', icon: 'status_backlog' as IconName, color: '#6B7280', count: 4 },
+    { label: 'Todo', icon: 'status_todo' as IconName, color: '#94A3B8', count: 3 },
+    { label: 'In Progress', icon: 'status_in_progress' as IconName, color: '#F59E0B', count: 2 },
+    { label: 'Done', icon: 'status_done' as IconName, color: '#10B981', count: 5 },
+  ];
+  const cards = [
+    [{ id: 'UP-12', pri: 'priority_high', priC: '#FB923C', title: 'Multi-tenant support' },
+     { id: 'UP-13', pri: 'priority_medium', priC: '#FBBF24', title: 'Slack integratie' }],
+    [{ id: 'UP-9', pri: 'priority_urgent', priC: '#EF4444', title: 'Auth fix login flow' },
+     { id: 'UP-10', pri: 'priority_medium', priC: '#FBBF24', title: 'Onboarding wizard' }],
+    [{ id: 'UP-7', pri: 'priority_high', priC: '#FB923C', title: 'GitHub webhook setup', assignee: 'agent' },
+     { id: 'UP-8', pri: 'priority_medium', priC: '#FBBF24', title: 'Dashboard polish', assignee: 'iwan' }],
+    [{ id: 'UP-5', pri: 'priority_low', priC: '#60A5FA', title: 'Add dark mode' }],
+  ];
 
   return (
     <div style={{
-      background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--accent)',
-      padding: 12, marginBottom: 6,
+      background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12,
+      padding: 16, maxWidth: 920, margin: '0 auto',
+      boxShadow: '0 30px 80px rgba(0,0,0,0.6), 0 0 60px rgba(139,92,246,0.08)',
     }}>
-      <input
-        autoFocus value={title} onChange={e => setTitle(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel(); }}
-        placeholder="Issue titel..."
-        style={{
-          width: '100%', background: 'transparent', border: 'none',
-          color: 'var(--text)', fontSize: 13, outline: 'none', marginBottom: 8,
-        }}
-      />
-      <div style={{ display: 'flex', gap: 6 }}>
-        <select value={projectId} onChange={e => setProjectId(e.target.value)} style={inputStyle()}>
-          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        <select value={priority} onChange={e => setPriority(e.target.value as IssuePriority)} style={inputStyle()}>
-          {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#FF5F57' }} />
+        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#FFBD2E' }} />
+        <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#28C940' }} />
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
-        <button onClick={onCancel} style={btnStyle('outline')}>Annuleer</button>
-        <button onClick={submit} style={btnStyle('primary')}>Toevoegen</button>
-      </div>
-    </div>
-  );
-}
-
-// ── Issue detail panel ──
-function IssueDetail({ issue, projects, cycles, comments, links, allIssues, onUpdate, onAddComment, onAddLink, onClaim, onBranchName, onDelete, onClose }: {
-  issue: Issue; projects: Project[]; cycles: Cycle[];
-  comments: Comment[]; links: IssueLinkRow[]; allIssues: Issue[];
-  onUpdate: (field: string, value: any) => void;
-  onAddComment: (body: string) => void;
-  onAddLink: (to: string, link_type: LinkType) => void;
-  onClaim: (assignee: string) => void;
-  onBranchName: () => void;
-  onDelete: () => void;
-  onClose: () => void;
-}) {
-  const [editTitle, setEditTitle] = useState(false);
-  const [title, setTitle] = useState(issue.title);
-  const [desc, setDesc] = useState(issue.description);
-  const [criteria, setCriteria] = useState(issue.acceptance_criteria);
-  const [branch, setBranch] = useState(issue.github_branch);
-  const [assignee, setAssignee] = useState(issue.assignee);
-  const [commentText, setCommentText] = useState('');
-  const [showDelete, setShowDelete] = useState(false);
-  const [showAddLink, setShowAddLink] = useState(false);
-  const [linkTarget, setLinkTarget] = useState('');
-  const [linkType, setLinkType] = useState<LinkType>('blocks');
-  const [showClaim, setShowClaim] = useState(false);
-  const [claimAs, setClaimAs] = useState('agent');
-
-  useEffect(() => {
-    setTitle(issue.title); setDesc(issue.description);
-    setCriteria(issue.acceptance_criteria); setBranch(issue.github_branch);
-    setAssignee(issue.assignee);
-  }, [issue]);
-
-  const statusCfg = COLUMNS.find(c => c.status === issue.status);
-
-  return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--bg-overlay)', zIndex: 100 }} />
-      <div style={{
-        position: 'fixed', right: 0, top: 0, bottom: 0, width: 600,
-        background: 'var(--bg-surface)', borderLeft: '1px solid var(--border)',
-        zIndex: 101, display: 'flex', flexDirection: 'column', overflowY: 'auto',
-      }}>
-        <div style={{
-          padding: '14px 18px', borderBottom: '1px solid var(--border)',
-          display: 'flex', alignItems: 'center', gap: 10,
-        }}>
-          {statusCfg && <span style={{ color: statusCfg.color, display: 'inline-flex' }}><Icon name={statusCfg.icon} size={14} /></span>}
-          <span style={{ fontSize: 12, color: 'var(--text-dim)', fontFamily: 'monospace', fontWeight: 600 }}>{issue.identifier}</span>
-          <button onClick={() => setShowClaim(true)} style={btnStyle('outline-sm')}>
-            <Icon name="check" size={11} /> <span style={{ marginLeft: 4 }}>Claim</span>
-          </button>
-          <button onClick={onBranchName} style={btnStyle('outline-sm')}>
-            <Icon name="branch" size={11} /> <span style={{ marginLeft: 4 }}>Branch-naam</span>
-          </button>
-          <div style={{ flex: 1 }} />
-          <button onClick={() => setShowDelete(true)} style={iconBtnStyle()}><Icon name="trash" size={14} /></button>
-          <button onClick={onClose} style={iconBtnStyle()}><Icon name="close" size={14} /></button>
-        </div>
-
-        <div style={{ padding: 20, flex: 1 }}>
-          {/* Title */}
-          {editTitle ? (
-            <input value={title} onChange={e => setTitle(e.target.value)}
-              onBlur={() => { onUpdate('title', title); setEditTitle(false); }}
-              onKeyDown={e => { if (e.key === 'Enter') { onUpdate('title', title); setEditTitle(false); } }}
-              autoFocus
-              style={{
-                width: '100%', fontSize: 18, fontWeight: 700, background: 'transparent',
-                border: '1px solid var(--accent)', borderRadius: 4, padding: '4px 8px',
-                color: 'var(--text)', outline: 'none', marginBottom: 16,
-              }}
-            />
-          ) : (
-            <h2 onClick={() => setEditTitle(true)} style={{
-              fontSize: 18, fontWeight: 700, marginBottom: 16, cursor: 'pointer', letterSpacing: '-0.2px',
-            }}>{issue.title}</h2>
-          )}
-
-          {/* Properties grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
-            <Field label="Status">
-              <select value={issue.status} onChange={e => onUpdate('status', e.target.value)} style={selectStyle()}>
-                {COLUMNS.map(c => <option key={c.status} value={c.status}>{c.label}</option>)}
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </Field>
-            <Field label="Prioriteit">
-              <select value={issue.priority} onChange={e => onUpdate('priority', e.target.value)} style={selectStyle()}>
-                {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </Field>
-            <Field label="Project">
-              <select value={issue.project_id} onChange={e => onUpdate('project_id', e.target.value)} style={selectStyle()}>
-                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Assignee">
-              <input value={assignee}
-                onChange={e => setAssignee(e.target.value)}
-                onBlur={() => onUpdate('assignee', assignee)}
-                placeholder="agent / iwan / ..." style={selectStyle()}
-              />
-            </Field>
-            <Field label="Cycle">
-              <select value={issue.cycle_id || ''} onChange={e => onUpdate('cycle_id', e.target.value || null)} style={selectStyle()}>
-                <option value="">— geen —</option>
-                {cycles.map(c => <option key={c.id} value={c.id}>{c.name} {c.status === 'active' ? '(actief)' : ''}</option>)}
-              </select>
-            </Field>
-            <Field label="Estimate">
-              <input type="number" value={issue.estimate ?? ''}
-                onChange={e => onUpdate('estimate', e.target.value === '' ? null : Number(e.target.value))}
-                style={selectStyle()} placeholder="story points"
-              />
-            </Field>
-            <Field label="Due date">
-              <input type="date" value={issue.due_date || ''}
-                onChange={e => onUpdate('due_date', e.target.value || null)}
-                style={selectStyle()}
-              />
-            </Field>
-            <Field label="Parent issue">
-              <select value={issue.parent_issue_id || ''} onChange={e => onUpdate('parent_issue_id', e.target.value || null)} style={selectStyle()}>
-                <option value="">— geen —</option>
-                {allIssues.filter(i => i.id !== issue.id).map(i => (
-                  <option key={i.id} value={i.id}>{i.identifier} — {i.title.slice(0, 40)}</option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          {/* Description */}
-          <Field label="Beschrijving" block>
-            <textarea value={desc} onChange={e => setDesc(e.target.value)} onBlur={() => onUpdate('description', desc)}
-              placeholder="Beschrijf wat er gebouwd moet worden..."
-              style={textareaStyle(80)}
-            />
-          </Field>
-
-          {/* Acceptance criteria */}
-          <Field label="Acceptatiecriteria" block>
-            <textarea value={criteria} onChange={e => setCriteria(e.target.value)} onBlur={() => onUpdate('acceptance_criteria', criteria)}
-              placeholder="- [ ] Criteria 1&#10;- [ ] Criteria 2"
-              style={{ ...textareaStyle(60), fontFamily: 'monospace' }}
-            />
-          </Field>
-
-          {/* Sub-issues */}
-          {issue.sub_issues && issue.sub_issues.length > 0 && (
-            <Field label={`Sub-issues (${issue.sub_issues.length})`} block>
-              {issue.sub_issues.map(s => {
-                const sCfg = COLUMNS.find(c => c.status === s.status);
-                return (
-                  <div key={s.id} style={rowStyle()}>
-                    {sCfg && <span style={{ color: sCfg.color, display: 'inline-flex' }}><Icon name={sCfg.icon} size={12} /></span>}
-                    <span style={monospaceStyle()}>{s.identifier}</span>
-                    <span>{s.title}</span>
-                  </div>
-                );
-              })}
-            </Field>
-          )}
-
-          {/* Links */}
-          <Field label={`Gekoppelde issues (${links.length})`} block action={
-            <button onClick={() => setShowAddLink(!showAddLink)} style={btnStyle('outline-sm')}>
-              <Icon name="link" size={11} /> <span style={{ marginLeft: 4 }}>Link</span>
-            </button>
-          }>
-            {showAddLink && (
-              <div style={{ display: 'flex', gap: 6, marginBottom: 8, padding: 8, background: 'var(--bg-card)', borderRadius: 6 }}>
-                <select value={linkType} onChange={e => setLinkType(e.target.value as LinkType)} style={selectStyle()}>
-                  {(['blocks', 'blocked_by', 'relates_to', 'duplicates'] as LinkType[]).map(t => (
-                    <option key={t} value={t}>{LINK_LABELS[t]}</option>
-                  ))}
-                </select>
-                <select value={linkTarget} onChange={e => setLinkTarget(e.target.value)} style={selectStyle()}>
-                  <option value="">— kies issue —</option>
-                  {allIssues.filter(i => i.id !== issue.id).map(i => (
-                    <option key={i.id} value={i.identifier}>{i.identifier} — {i.title.slice(0,40)}</option>
-                  ))}
-                </select>
-                <button onClick={() => { if (linkTarget) { onAddLink(linkTarget, linkType); setShowAddLink(false); setLinkTarget(''); } }}
-                  style={btnStyle('primary')}>OK</button>
-              </div>
-            )}
-            {links.filter(l => l.from_issue_id === issue.id).map(l => {
-              const tCfg = COLUMNS.find(c => c.status === l.to?.status);
-              return (
-                <div key={l.id} style={rowStyle()}>
-                  <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{LINK_LABELS[l.link_type]}</span>
-                  {tCfg && <span style={{ color: tCfg.color, display: 'inline-flex' }}><Icon name={tCfg.icon} size={11} /></span>}
-                  <span style={monospaceStyle()}>{l.to?.identifier}</span>
-                  <span>{l.to?.title}</span>
-                </div>
-              );
-            })}
-          </Field>
-
-          {/* GitHub */}
-          <Field label="GitHub" block>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Icon name="branch" size={13} style={{ color: 'var(--text-dim)' }} />
-              <input value={branch}
-                onChange={e => setBranch(e.target.value)}
-                onBlur={() => onUpdate('github_branch', branch)}
-                placeholder="iwan/up-42-titel-slug"
-                style={{ ...selectStyle(), fontFamily: 'monospace', flex: 1 }}
-              />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, textAlign: 'left' }}>
+        {cols.map((col, ci) => (
+          <div key={ci}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '0 4px 10px',
+              borderBottom: `2px solid ${col.color}22`, marginBottom: 8,
+            }}>
+              <span style={{ color: col.color, display: 'inline-flex' }}><Icon name={col.icon} size={12} /></span>
+              <span style={{ fontSize: 11, fontWeight: 600 }}>{col.label}</span>
+              <span style={{
+                fontSize: 10, color: 'var(--text-dim)', background: 'var(--bg-card)',
+                padding: '1px 5px', borderRadius: 8, marginLeft: 'auto',
+              }}>{col.count}</span>
             </div>
-            {issue.github_pr_url && (
-              <a href={issue.github_pr_url} target="_blank" rel="noreferrer" style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4,
-                marginTop: 8, fontSize: 12, color: 'var(--accent)', textDecoration: 'none',
-              }}>
-                <Icon name="pr" size={12} /> PR #{issue.github_pr_number} bekijken
-                <Icon name="arrow_right" size={11} />
-              </a>
-            )}
-          </Field>
-
-          {/* Comments */}
-          <Field label={`Activiteit (${comments.length})`} block>
-            {comments.map(c => (
+            {cards[ci].map(c => (
               <div key={c.id} style={{
-                padding: '8px 10px', borderRadius: 6, background: 'var(--bg-card)',
-                marginBottom: 4, borderLeft: `3px solid ${commentColor(c.author)}`,
+                background: 'var(--bg-card)', borderRadius: 6,
+                border: '1px solid var(--border)', padding: '8px 10px', marginBottom: 4,
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                  <span style={{
-                    fontSize: 11, fontWeight: 600, color: commentColor(c.author),
-                    display: 'inline-flex', alignItems: 'center', gap: 5,
-                  }}>
-                    <Icon name={authorIcon(c.author)} size={11} /> {c.author}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                  <span style={{ color: (c as any).priC, display: 'inline-flex' }}>
+                    <Icon name={(c as any).pri} size={10} />
                   </span>
-                  <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>
-                    {new Date(c.created_at).toLocaleString('nl-NL')}
-                  </span>
+                  <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'var(--text-dim)' }}>{c.id}</span>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>{c.body}</div>
+                <div style={{ fontSize: 11, lineHeight: 1.3, marginBottom: (c as any).assignee ? 5 : 0 }}>{c.title}</div>
+                {(c as any).assignee && (
+                  <span style={{
+                    fontSize: 9, color: 'var(--accent)', background: 'var(--accent-glow)',
+                    padding: '1px 5px', borderRadius: 3, display: 'inline-flex', alignItems: 'center', gap: 3,
+                  }}>
+                    <Icon name={(c as any).assignee === 'agent' ? 'agent' : 'user'} size={8} />
+                    {(c as any).assignee}
+                  </span>
+                )}
               </div>
             ))}
-            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <input value={commentText}
-                onChange={e => setCommentText(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && commentText.trim()) {
-                    onAddComment(commentText.trim()); setCommentText('');
-                  }
-                }}
-                placeholder="Schrijf een opmerking..."
-                style={selectStyle()}
-              />
-              <button onClick={() => {
-                if (commentText.trim()) { onAddComment(commentText.trim()); setCommentText(''); }
-              }} style={btnStyle('primary')}>Verstuur</button>
-            </div>
-          </Field>
-        </div>
-
-        {showClaim && (
-          <ModalOverlay onClose={() => setShowClaim(false)}>
-            <h3 style={modalH()}>Claim issue</h3>
-            <input value={claimAs} onChange={e => setClaimAs(e.target.value)} placeholder="agent / iwan / ..." autoFocus
-              style={{ ...selectStyle(), width: '100%', marginBottom: 10 }} />
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowClaim(false)} style={btnStyle('outline')}>Annuleer</button>
-              <button onClick={() => { if (claimAs) { onClaim(claimAs); setShowClaim(false); } }} style={btnStyle('primary')}>Claim</button>
-            </div>
-          </ModalOverlay>
-        )}
-
-        {showDelete && (
-          <ModalOverlay onClose={() => setShowDelete(false)}>
-            <p style={{ fontSize: 14, marginBottom: 16 }}>Verwijder <strong>{issue.identifier}</strong>?</p>
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-              <button onClick={() => setShowDelete(false)} style={btnStyle('outline')}>Annuleer</button>
-              <button onClick={onDelete} style={btnStyle('danger')}>Verwijder</button>
-            </div>
-          </ModalOverlay>
-        )}
-      </div>
-    </>
-  );
-}
-
-// ── Cycles view ──
-function CyclesView({ cycles, issues, onCreate }: {
-  cycles: Cycle[]; issues: Issue[]; onCreate: () => void;
-}) {
-  return (
-    <div style={{ padding: 24, overflowY: 'auto', flex: 1 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, alignItems: 'center' }}>
-        <h2 style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px' }}>Cycles</h2>
-        <button onClick={onCreate} style={btnStyle('primary')}>
-          <Icon name="plus" size={11} /> <span style={{ marginLeft: 4 }}>Nieuwe cycle</span>
-        </button>
-      </div>
-      {cycles.length === 0 && <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>Nog geen cycles. Maak er één om werk in sprint-blokken te plannen.</p>}
-      {cycles.map(c => {
-        const cycleIssues = issues.filter(i => i.cycle_id === c.id);
-        const done = cycleIssues.filter(i => i.status === 'done').length;
-        const pct = cycleIssues.length ? Math.round(100 * done / cycleIssues.length) : 0;
-        return (
-          <div key={c.id} style={{
-            background: 'var(--bg-card)', border: '1px solid var(--border)',
-            borderRadius: 8, padding: 16, marginBottom: 12,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-              <Icon name="cycles" size={14} />
-              <h3 style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{c.name}</h3>
-              <span style={{
-                fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px',
-                background: c.status === 'active' ? '#10B98122' : c.status === 'upcoming' ? '#8B5CF622' : '#6B728022',
-                color: c.status === 'active' ? '#10B981' : c.status === 'upcoming' ? '#8B5CF6' : '#6B7280',
-              }}>{c.status}</span>
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 8 }}>
-              {fmtDate(c.starts_at)} → {fmtDate(c.ends_at)} · {cycleIssues.length} issues · {done} done ({pct}%)
-            </div>
-            <div style={{ height: 4, background: 'var(--bg)', borderRadius: 2 }}>
-              <div style={{ width: `${pct}%`, height: '100%', background: '#10B981', borderRadius: 2 }} />
-            </div>
           </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── Activity view ──
-function ActivityView({ items }: { items: Activity[] }) {
-  return (
-    <div style={{ padding: 24, overflowY: 'auto', flex: 1 }}>
-      <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, letterSpacing: '-0.2px' }}>Activity log</h2>
-      {items.length === 0 && <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>Geen activiteit nog.</p>}
-      {items.map(a => (
-        <div key={a.id} style={{
-          padding: '8px 10px', borderRadius: 6, background: 'var(--bg-card)',
-          borderLeft: `3px solid ${activityColor(a.type)}`, marginBottom: 4, fontSize: 12,
-        }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ color: activityColor(a.type), display: 'inline-flex' }}>
-              <Icon name={activityIcon(a.type)} size={12} />
-            </span>
-            <span style={{ fontWeight: 600 }}>{a.actor}</span>
-            <span style={{ color: 'var(--text-muted)' }}>{describeActivity(a)}</span>
-            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-dim)' }}>
-              {new Date(a.created_at).toLocaleString('nl-NL')}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── New project modal ──
-function NewProjectModal({ onCreated, onClose }: { onCreated: () => void; onClose: () => void }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [color, setColor] = useState(PROJECT_COLORS[0]);
-  const submit = async () => {
-    if (!name.trim()) return;
-    await api.post('/api/projects', { name, description, color });
-    onCreated();
-  };
-  return (
-    <ModalOverlay onClose={onClose}>
-      <h3 style={modalH()}>Nieuw project</h3>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Project naam" autoFocus
-        onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-        style={{ ...selectStyle(), width: '100%', marginBottom: 10 }}
-      />
-      <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Beschrijving"
-        style={textareaStyle(60)}
-      />
-      <div style={{ display: 'flex', gap: 6, margin: '12px 0' }}>
-        {PROJECT_COLORS.map(c => (
-          <button key={c} onClick={() => setColor(c)} style={{
-            width: 22, height: 22, borderRadius: '50%', background: c,
-            border: color === c ? '2px solid white' : '2px solid transparent', cursor: 'pointer',
-          }} />
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-        <button onClick={onClose} style={btnStyle('outline')}>Annuleer</button>
-        <button onClick={submit} style={btnStyle('primary')}>Aanmaken</button>
-      </div>
-    </ModalOverlay>
-  );
-}
-
-// ── New cycle modal ──
-function NewCycleModal({ onCreated, onClose }: { onCreated: () => void; onClose: () => void }) {
-  const today = new Date().toISOString().slice(0, 10);
-  const inTwoWeeks = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  const [name, setName] = useState('');
-  const [starts, setStarts] = useState(today);
-  const [ends, setEnds] = useState(inTwoWeeks);
-
-  const submit = async () => {
-    if (!name.trim()) return;
-    await api.post('/api/cycles', { name, starts_at: starts, ends_at: ends });
-    onCreated();
-  };
-  return (
-    <ModalOverlay onClose={onClose}>
-      <h3 style={modalH()}>Nieuwe cycle</h3>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Cycle naam (bv 'Week 21')" autoFocus
-        style={{ ...selectStyle(), width: '100%', marginBottom: 10 }}
-      />
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <input type="date" value={starts} onChange={e => setStarts(e.target.value)} style={{ ...selectStyle(), flex: 1 }} />
-        <input type="date" value={ends} onChange={e => setEnds(e.target.value)} style={{ ...selectStyle(), flex: 1 }} />
-      </div>
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-        <button onClick={onClose} style={btnStyle('outline')}>Annuleer</button>
-        <button onClick={submit} style={btnStyle('primary')}>Aanmaken</button>
-      </div>
-    </ModalOverlay>
-  );
-}
-
-// ── Reusable bits ──
-function Field({ label, action, block, children }: { label: string; action?: React.ReactNode; block?: boolean; children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: block ? 16 : 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>{label}</span>
-        {action && <div style={{ marginLeft: 'auto' }}>{action}</div>}
-      </div>
-      {children}
     </div>
   );
 }
 
-function ModalOverlay({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+// ── Features ─────────────────────────────────────────────────────
+function Features() {
+  const items: { icon: IconName; title: string; body: string }[] = [
+    { icon: 'agent', title: 'MCP-server ingebouwd',
+      body: '20 tools direct beschikbaar in Claude Code. Agents claimen taken, lezen criteria, en loggen voortgang via stdio MCP — zonder curl.' },
+    { icon: 'github', title: 'GitHub auto-flow',
+      body: 'Branch met UP-42 in naam → status In Progress. PR opened → In Progress. Merged met "Fixes UP-42" → Done. Zoals Linear.' },
+    { icon: 'sub_issues', title: 'Sub-issues + dependencies',
+      body: 'Breek grote taken op. Link blocks / blocked_by zodat de "next task" query geblokkeerde issues automatisch overslaat.' },
+    { icon: 'cycles', title: 'Cycles & sprints',
+      body: 'Plan werk in 2-weken blokken. Progress bars per cycle, auto active/upcoming/completed status.' },
+    { icon: 'views', title: 'Saved views',
+      body: 'Agent queue. High-priority backlog. Triage inbox. Sla je filters op en kom direct waar je moet zijn.' },
+    { icon: 'activity', title: 'Volledig activity log',
+      body: 'Elke status-wijziging, comment, PR-event en assignee-update gelogd. Audit-trail voor jou én de agent.' },
+  ];
   return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--bg-overlay)', zIndex: 200 }} />
+    <section id="features" style={{ padding: '80px 24px', maxWidth: 1100, margin: '0 auto' }}>
+      <SectionHeader eyebrow="Features" title="Alles wat je nodig hebt om agents écht autonoom te laten werken" />
       <div style={{
-        position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-        background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12,
-        padding: 24, width: 420, zIndex: 201,
-      }}>{children}</div>
-    </>
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 48,
+      }}>
+        {items.map((it, i) => (
+          <div key={i} style={{
+            background: 'var(--bg-surface)', border: '1px solid var(--border)',
+            borderRadius: 12, padding: 22,
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 8, background: 'var(--accent-glow)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--accent)', marginBottom: 14,
+            }}>
+              <Icon name={it.icon} size={18} />
+            </div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, letterSpacing: '-0.2px' }}>{it.title}</h3>
+            <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)' }}>{it.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
-// ── Styles ──
-function inputStyle(): React.CSSProperties {
-  return {
-    flex: 1, padding: '5px 8px', borderRadius: 4, border: '1px solid var(--border)',
-    background: 'var(--bg)', color: 'var(--text)', fontSize: 11,
-  };
-}
-function selectStyle(): React.CSSProperties {
-  return {
-    padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)',
-    background: 'var(--bg-card)', color: 'var(--text)', fontSize: 12, outline: 'none',
-  };
-}
-function textareaStyle(minHeight: number): React.CSSProperties {
-  return {
-    width: '100%', minHeight, padding: 10, borderRadius: 6,
-    border: '1px solid var(--border)', background: 'var(--bg-card)',
-    color: 'var(--text)', fontSize: 12, resize: 'vertical', outline: 'none',
-    fontFamily: 'inherit', lineHeight: 1.5,
-  };
-}
-function btnStyle(variant: 'primary' | 'outline' | 'outline-sm' | 'danger'): React.CSSProperties {
-  const base: React.CSSProperties = {
-    padding: variant === 'outline-sm' ? '4px 8px' : '6px 12px',
-    borderRadius: 6, fontSize: variant === 'outline-sm' ? 11 : 12, cursor: 'pointer',
-    fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  };
-  if (variant === 'primary') return { ...base, border: 'none', background: 'var(--accent)', color: 'white' };
-  if (variant === 'danger')  return { ...base, border: 'none', background: 'var(--red)', color: 'white' };
-  return { ...base, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' };
-}
-function iconBtnStyle(): React.CSSProperties {
-  return {
-    background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer',
-    padding: 4, borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  };
-}
-function rowStyle(): React.CSSProperties {
-  return {
-    padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 6,
-    border: '1px solid var(--border)', marginBottom: 4, display: 'flex',
-    alignItems: 'center', gap: 8, fontSize: 12,
-  };
-}
-function monospaceStyle(): React.CSSProperties {
-  return { fontFamily: 'monospace', color: 'var(--text-dim)', fontSize: 11 };
-}
-function modalH(): React.CSSProperties {
-  return { fontSize: 15, fontWeight: 700, marginBottom: 14, letterSpacing: '-0.2px' };
+// ── Pricing ──────────────────────────────────────────────────────
+function Pricing({ billing, onBilling }: { billing: BillingCycle; onBilling: (b: BillingCycle) => void }) {
+  const proPrice = billing === 'monthly' ? 5 : 50;
+  const proPeriod = billing === 'monthly' ? '/maand' : '/jaar';
+  const proCaption = billing === 'monthly'
+    ? 'of €50/jaar — 2 maanden gratis'
+    : '€4,17/maand effectief — 2 maanden gratis';
+
+  return (
+    <section id="pricing" style={{ padding: '80px 24px', maxWidth: 1100, margin: '0 auto' }}>
+      <SectionHeader eyebrow="Pricing" title="Simpel. Twee tiers. Geen verrassingen." />
+
+      {/* Toggle */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 32, marginBottom: 40 }}>
+        <div style={{
+          display: 'inline-flex', background: 'var(--bg-surface)',
+          border: '1px solid var(--border)', borderRadius: 10, padding: 4,
+        }}>
+          {(['monthly', 'yearly'] as BillingCycle[]).map(b => (
+            <button key={b} onClick={() => onBilling(b)} style={{
+              padding: '8px 18px', borderRadius: 6, border: 'none',
+              background: billing === b ? 'var(--accent)' : 'transparent',
+              color: billing === b ? 'white' : 'var(--text-muted)',
+              fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>
+              {b === 'monthly' ? 'Maandelijks' : 'Jaarlijks'}
+              {b === 'yearly' && (
+                <span style={{
+                  fontSize: 10, padding: '1px 6px', borderRadius: 8,
+                  background: billing === 'yearly' ? 'rgba(255,255,255,0.18)' : 'var(--accent-glow)',
+                  color: billing === 'yearly' ? 'white' : 'var(--accent)',
+                  fontWeight: 700,
+                }}>−17%</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Cards */}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, maxWidth: 800, margin: '0 auto',
+      }}>
+        <PricingCard
+          name="Free"
+          price="€0"
+          period="voor altijd"
+          caption="Voor wie het wil proberen of solo werkt"
+          cta="Open app"
+          ctaHref="/board"
+          ctaVariant="outline"
+          features={[
+            { ok: true,  text: 'Max 3 projecten' },
+            { ok: true,  text: 'Max 50 issues totaal' },
+            { ok: true,  text: 'Basis Kanban: Backlog / Todo / In Progress / Done' },
+            { ok: true,  text: 'Handmatige GitHub-koppeling (branch + PR-URL invoeren)' },
+            { ok: true,  text: 'Activity log (laatste 7 dagen)' },
+            { ok: false, text: 'MCP-server voor Claude Code' },
+            { ok: false, text: 'GitHub webhook & auto status-transitions' },
+            { ok: false, text: 'Cycles (sprints)' },
+            { ok: false, text: 'Sub-issues + linked issues' },
+            { ok: false, text: 'Custom views' },
+          ]}
+          badge="Powered-by-P4A badge in footer"
+        />
+
+        <PricingCard
+          name="Pro"
+          highlight
+          price={`€${proPrice}`}
+          period={proPeriod}
+          caption={proCaption}
+          cta="Upgrade naar Pro"
+          ctaHref="#"
+          ctaVariant="primary"
+          ctaDisabled
+          ctaSubLabel="Stripe-integratie volgt"
+          features={[
+            { ok: true, text: 'Onbeperkt projecten + issues', strong: true },
+            { ok: true, text: 'Alle 7 statussen (incl. Triage, In Review, Cancelled)' },
+            { ok: true, text: 'MCP-server — 20 tools voor Claude Code', strong: true },
+            { ok: true, text: 'GitHub auto-integratie (webhook + polling)', strong: true },
+            { ok: true, text: 'Magic words: Fixes/Closes/Resolves UP-42 → auto-Done' },
+            { ok: true, text: 'Cycles (sprints) met progress-tracking' },
+            { ok: true, text: 'Sub-issues + linked issues (blocks/blocked-by)' },
+            { ok: true, text: 'Onbeperkt custom views' },
+            { ok: true, text: 'Volledig activity log (geen retentie-limiet)' },
+            { ok: true, text: 'Geen branding · email support' },
+          ]}
+        />
+      </div>
+    </section>
+  );
 }
 
-// ── Helpers ──
-function fmtDate(s: string) {
-  try { return new Date(s).toLocaleDateString('nl-NL', { month: 'short', day: 'numeric' }); }
-  catch { return s; }
+function PricingCard({ name, price, period, caption, cta, ctaHref, ctaVariant, ctaDisabled, ctaSubLabel, features, badge, highlight }: {
+  name: string;
+  price: string; period: string; caption: string;
+  cta: string; ctaHref: string; ctaVariant: 'primary' | 'outline'; ctaDisabled?: boolean; ctaSubLabel?: string;
+  features: { ok: boolean; text: string; strong?: boolean }[];
+  badge?: string; highlight?: boolean;
+}) {
+  return (
+    <div style={{
+      background: highlight ? 'linear-gradient(180deg, rgba(139,92,246,0.08), var(--bg-surface) 40%)' : 'var(--bg-surface)',
+      border: highlight ? '1px solid rgba(139,92,246,0.45)' : '1px solid var(--border)',
+      borderRadius: 14, padding: 28, position: 'relative',
+      boxShadow: highlight ? '0 20px 60px rgba(139,92,246,0.15)' : 'none',
+    }}>
+      {highlight && (
+        <span style={{
+          position: 'absolute', top: -12, right: 20,
+          background: 'var(--accent)', color: 'white',
+          padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+          letterSpacing: '0.3px', textTransform: 'uppercase',
+        }}>Recommended</span>
+      )}
+
+      <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6, letterSpacing: '-0.2px' }}>{name}</h3>
+      <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 18 }}>{caption}</p>
+
+      <div style={{ marginBottom: 22 }}>
+        <span style={{ fontSize: 40, fontWeight: 800, letterSpacing: '-1px' }}>{price}</span>
+        <span style={{ fontSize: 14, color: 'var(--text-dim)', marginLeft: 6 }}>{period}</span>
+      </div>
+
+      {ctaDisabled ? (
+        <button disabled style={{
+          ...btnPrimary(), padding: '11px 16px', fontSize: 14, width: '100%', justifyContent: 'center',
+          opacity: 0.5, cursor: 'not-allowed',
+        }}>
+          {cta}
+        </button>
+      ) : (
+        <Link href={ctaHref} style={{
+          ...(ctaVariant === 'primary' ? btnPrimary() : btnOutline()),
+          padding: '11px 16px', fontSize: 14, width: '100%', justifyContent: 'center', display: 'flex',
+        }}>
+          {cta} <Icon name="arrow_right" size={13} style={{ marginLeft: 6 }} />
+        </Link>
+      )}
+      {ctaSubLabel && (
+        <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-dim)', marginTop: 8 }}>
+          {ctaSubLabel}
+        </div>
+      )}
+
+      <div style={{ borderTop: '1px solid var(--border)', margin: '22px 0 16px' }} />
+
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        {features.map((f, i) => (
+          <li key={i} style={{
+            display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10,
+            fontSize: 13, color: f.ok ? 'var(--text)' : 'var(--text-dim)',
+            fontWeight: f.strong ? 600 : 400,
+          }}>
+            <span style={{
+              flexShrink: 0, marginTop: 2,
+              color: f.ok ? (highlight ? 'var(--accent)' : '#10B981') : 'var(--text-dim)',
+              opacity: f.ok ? 1 : 0.45, display: 'inline-flex',
+            }}>
+              {f.ok ? <Icon name="check" size={13} /> : <Icon name="close" size={13} />}
+            </span>
+            <span>{f.text}</span>
+          </li>
+        ))}
+      </ul>
+
+      {badge && (
+        <div style={{
+          marginTop: 18, padding: 10, borderRadius: 8,
+          background: 'var(--bg-card)', border: '1px dashed var(--border)',
+          fontSize: 11, color: 'var(--text-muted)', textAlign: 'center',
+        }}>
+          {badge}
+        </div>
+      )}
+    </div>
+  );
 }
-function assigneeIcon(author: string): IconName {
-  if (author === 'agent' || author.toLowerCase().includes('agent') || author.toLowerCase().includes('bot') || author.toLowerCase().includes('claude')) return 'agent';
-  return 'user';
+
+// ── FAQ ──────────────────────────────────────────────────────────
+function Faq() {
+  const items: { q: string; a: string }[] = [
+    { q: 'Is dit echt open source?',
+      a: `Ja. De code staat op github.com/Upscailed/UP-Project4Agents en is MIT-licensed. Je kunt 'm zelf hosten — Free of Pro features inschakelen doe je dan via een license key (komt nog).` },
+    { q: 'Hoe werkt de MCP-koppeling met Claude Code?',
+      a: `In de Pro versie staat er een .mcp.json in de project root. Claude Code laadt 'm automatisch zodra je naar de map gaat — je krijgt 20 tools (get_next_issue, claim_issue, get_branch_name, etc.) en de agent kan zelfstandig issues claimen en updaten.` },
+    { q: 'Wat doet de GitHub-integratie precies?',
+      a: `Zoals Linear: branch met "UP-42" in de naam → status In Progress. PR opened → In Progress. PR review-requested → In Review. PR merged → Done. "Fixes UP-42" in PR body sluit de issue automatisch bij merge.` },
+    { q: 'Kan ik later van Free naar Pro upgraden zonder data te verliezen?',
+      a: `Ja. Je data blijft in dezelfde SQLite-database — bij upgrade worden alleen de feature-locks verwijderd. Geen migratie nodig.` },
+    { q: 'Heb ik een team-account nodig als ik agents wil laten samenwerken?',
+      a: `Nee. Pro ondersteunt meerdere "assignees" op één account (bv. assignee=agent, assignee=iwan, assignee=claude). Een Team-tier komt later voor multi-user / SSO / Slack-integraties.` },
+    { q: 'Wat als ik 51 issues heb in de Free versie?',
+      a: `Je kunt bestaande issues blijven beheren, maar geen nieuwe meer aanmaken tot je archiveert of upgradet. Geen harde data-deletion.` },
+    { q: 'Wanneer komt Stripe-integratie live?',
+      a: `Binnenkort. De landingspagina toont nu al de prijzen, maar de Pro-knop is nog disabled. Mail iwan@upscailed.nl als je early-access wil.` },
+  ];
+
+  return (
+    <section id="faq" style={{ padding: '80px 24px', maxWidth: 800, margin: '0 auto' }}>
+      <SectionHeader eyebrow="FAQ" title="Vragen die we vaak horen" />
+      <div style={{ marginTop: 40, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {items.map((it, i) => <FaqItem key={i} q={it.q} a={it.a} />)}
+      </div>
+    </section>
+  );
 }
-function commentColor(author: string) {
-  if (author === 'agent' || author.startsWith('agent')) return 'var(--accent)';
-  if (author.startsWith('github')) return '#A78BFA';
-  return 'var(--green)';
+
+function FaqItem({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{
+      background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10,
+    }}>
+      <button onClick={() => setOpen(!open)} style={{
+        width: '100%', background: 'none', border: 'none', color: 'var(--text)',
+        padding: '16px 18px', textAlign: 'left', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', gap: 12, fontSize: 14, fontWeight: 600,
+      }}>
+        <span style={{ flex: 1 }}>{q}</span>
+        <span style={{
+          transition: 'transform 0.2s', transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+          color: 'var(--text-dim)', display: 'inline-flex',
+        }}><Icon name="arrow_right" size={14} /></span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 18px 16px', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.65 }}>{a}</div>
+      )}
+    </div>
+  );
 }
-function authorIcon(author: string): IconName {
-  if (author === 'agent' || author.startsWith('agent')) return 'agent';
-  if (author.startsWith('github')) return 'github';
-  return 'user';
+
+// ── Footer ───────────────────────────────────────────────────────
+function Footer() {
+  return (
+    <footer style={{
+      borderTop: '1px solid var(--border)', padding: '40px 24px',
+      background: 'var(--bg-surface)',
+    }}>
+      <div style={{
+        maxWidth: 1100, margin: '0 auto',
+        display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={logoStyle()}>UP</div>
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            © {new Date().getFullYear()} Upscailed · Project4Agents · MIT
+          </span>
+        </div>
+        <div style={{ flex: 1 }} />
+        <a href="https://github.com/Upscailed/UP-Project4Agents" target="_blank" rel="noreferrer"
+          style={{ ...navLink(), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Icon name="github" size={14} /> Source
+        </a>
+        <Link href="/board" style={navLink()}>Open app</Link>
+      </div>
+    </footer>
+  );
 }
-function activityColor(type: string) {
-  if (type.startsWith('pr_')) return '#A78BFA';
-  if (type === 'status_changed') return '#F59E0B';
-  if (type === 'comment_added') return '#10B981';
-  if (type === 'issue_created') return '#8B5CF6';
-  if (type === 'branch_linked') return '#94A3B8';
-  return '#6B7280';
+
+// ── Bits ─────────────────────────────────────────────────────────
+function SectionHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
+  return (
+    <div style={{ textAlign: 'center' }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700, color: 'var(--accent)',
+        textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10,
+      }}>{eyebrow}</div>
+      <h2 style={{
+        fontSize: 'clamp(26px, 4vw, 36px)', fontWeight: 700,
+        letterSpacing: '-0.5px', maxWidth: 720, margin: '0 auto',
+      }}>{title}</h2>
+    </div>
+  );
 }
-function activityIcon(type: string): IconName {
-  if (type === 'pr_opened' || type === 'pr_linked' || type === 'pr_merged' || type === 'pr_closed' || type === 'pr_review_requested') return 'pr';
-  if (type === 'status_changed') return 'arrow_right';
-  if (type === 'comment_added') return 'comment';
-  if (type === 'issue_created') return 'plus';
-  if (type === 'priority_changed') return 'priority_high';
-  if (type === 'assignee_changed') return 'user';
-  if (type === 'branch_linked') return 'branch';
-  if (type === 'linked_issue_added') return 'link';
-  return 'activity';
+
+function logoStyle(): React.CSSProperties {
+  return {
+    width: 30, height: 30, borderRadius: 7,
+    background: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontWeight: 800, fontSize: 13, color: 'white', letterSpacing: '-0.5px',
+  };
 }
-function describeActivity(a: Activity): string {
-  const p = a.payload || {};
-  switch (a.type) {
-    case 'issue_created': return `maakte ${p.identifier ? p.identifier + ' — ' : ''}${p.title || p.name || ''}`;
-    case 'status_changed': return `zette ${p.identifier} ${p.from} → ${p.to}`;
-    case 'priority_changed': return `zette priority op ${p.to} op ${p.identifier}`;
-    case 'assignee_changed': return `gaf ${p.identifier} aan ${p.to || '(niemand)'}`;
-    case 'comment_added': return `op ${p.identifier}: "${p.preview}..."`;
-    case 'branch_linked': return `linkte branch ${p.branch} aan ${p.identifier}`;
-    case 'pr_linked': return `linkte ${p.pr_url} aan ${p.identifier}`;
-    case 'pr_opened': return `opende PR #${p.pr_number} voor ${p.identifier}`;
-    case 'pr_merged': return `mergde PR #${p.pr_number} voor ${p.identifier}`;
-    case 'pr_closed': return `sloot PR #${p.pr_number} voor ${p.identifier}`;
-    case 'pr_review_requested': return `vroeg review op PR #${p.pr_number} voor ${p.identifier}`;
-    case 'linked_issue_added': return `${p.from} ${p.link_type} ${p.to}`;
-    default: return a.type;
-  }
+function navLink(): React.CSSProperties {
+  return {
+    fontSize: 13, color: 'var(--text-muted)', textDecoration: 'none', fontWeight: 500,
+  };
+}
+function btnPrimary(): React.CSSProperties {
+  return {
+    background: 'var(--accent)', color: 'white', border: 'none',
+    padding: '8px 14px', borderRadius: 8, fontWeight: 600, fontSize: 13,
+    cursor: 'pointer', textDecoration: 'none',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  };
+}
+function btnOutline(): React.CSSProperties {
+  return {
+    background: 'transparent', color: 'var(--text)',
+    border: '1px solid var(--border)',
+    padding: '8px 14px', borderRadius: 8, fontWeight: 600, fontSize: 13,
+    cursor: 'pointer', textDecoration: 'none',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  };
 }
