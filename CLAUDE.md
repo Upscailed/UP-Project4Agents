@@ -40,6 +40,21 @@ of door admin worden aangemaakt.
 
 Sessies via httpOnly cookie (30 dagen). Wachtwoorden: scrypt-hash (Node native, geen externe deps).
 
+### GitHub OAuth (Sign in with GitHub) — optioneel
+
+1. Maak een OAuth app op https://github.com/settings/applications/new
+   - **Homepage URL:** `http://localhost:3400` (of je productie-URL)
+   - **Callback URL:** `http://localhost:3400/api/auth/github/callback`
+2. Kopieer Client ID + Client Secret naar `.env.local`:
+   ```
+   GITHUB_OAUTH_CLIENT_ID=Ov23xxxxxxxxxxx
+   GITHUB_OAUTH_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxx
+   ```
+3. Herstart `npm run dev`
+4. De "Inloggen met GitHub" knop op `/login` werkt nu
+
+GitHub-users worden automatisch toegevoegd aan de default workspace. Als hun email al bestaat (van een eerdere signup met password), wordt GitHub gekoppeld aan dat account.
+
 ### Voor MCP/CLI: API-token
 
 De MCP-server praat met de API zonder browser-cookie — die gebruikt een Bearer-token:

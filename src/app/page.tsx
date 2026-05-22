@@ -228,15 +228,13 @@ function Features() {
 
 // ── Pricing ──────────────────────────────────────────────────────
 function Pricing({ billing, onBilling }: { billing: BillingCycle; onBilling: (b: BillingCycle) => void }) {
-  const proPrice = billing === 'monthly' ? 5 : 50;
-  const proPeriod = billing === 'monthly' ? '/maand' : '/jaar';
-  const proCaption = billing === 'monthly'
-    ? 'of €50/jaar — 2 maanden gratis'
-    : '€4,17/maand effectief — 2 maanden gratis';
+  const plusPrice = billing === 'monthly' ? 5 : 50;
+  const proPrice = billing === 'monthly' ? 15 : 150;
+  const period = billing === 'monthly' ? '/maand' : '/jaar';
 
   return (
-    <section id="pricing" style={{ padding: '80px 24px', maxWidth: 1100, margin: '0 auto' }}>
-      <SectionHeader eyebrow="Pricing" title="Simpel. Twee tiers. Geen verrassingen." />
+    <section id="pricing" style={{ padding: '80px 24px', maxWidth: 1200, margin: '0 auto' }}>
+      <SectionHeader eyebrow="Pricing" title="Drie tiers. Geen verrassingen." />
 
       {/* Toggle */}
       <div style={{ display: 'flex', justifyContent: 'center', marginTop: 32, marginBottom: 40 }}>
@@ -268,55 +266,78 @@ function Pricing({ billing, onBilling }: { billing: BillingCycle; onBilling: (b:
 
       {/* Cards */}
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, maxWidth: 800, margin: '0 auto',
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: 16,
+        maxWidth: 1100, margin: '0 auto',
       }}>
         <PricingCard
           name="Free"
           price="€0"
           period="voor altijd"
-          caption="Voor wie het wil proberen of solo werkt"
+          caption="Solo gebruik om te proberen"
           cta="Open app"
           ctaHref="/board"
           ctaVariant="outline"
           features={[
-            { ok: true,  text: '1 gebruiker (solo gebruik)' },
+            { ok: true,  text: '1 gebruiker · 1 workspace' },
             { ok: true,  text: 'Max 3 projecten · max 50 issues' },
-            { ok: true,  text: 'Basis Kanban: Backlog / Todo / In Progress / Done' },
-            { ok: true,  text: 'Handmatige GitHub-koppeling (branch + PR-URL invoeren)' },
+            { ok: true,  text: 'Basis Kanban (4 statussen)' },
+            { ok: true,  text: 'Handmatige GitHub-koppeling' },
             { ok: true,  text: 'Activity log (laatste 7 dagen)' },
-            { ok: false, text: 'Meerdere gebruikers / team' },
             { ok: false, text: 'MCP-server voor Claude Code' },
-            { ok: false, text: 'GitHub webhook & auto status-transitions' },
-            { ok: false, text: 'Cycles (sprints)' },
-            { ok: false, text: 'Sub-issues + linked issues' },
-            { ok: false, text: 'Custom views' },
+            { ok: false, text: 'GitHub webhook & auto-transitions' },
+            { ok: false, text: 'Cycles · sub-issues · linked issues' },
+            { ok: false, text: 'Multi-workspace · SSO' },
           ]}
           badge="Powered-by-P4A badge in footer"
         />
 
         <PricingCard
-          name="Pro"
+          name="Plus"
           highlight
+          price={`€${plusPrice}`}
+          period={period}
+          caption={billing === 'monthly' ? 'of €50/jaar — 2 maanden gratis' : '€4,17/maand effectief'}
+          cta="Upgrade naar Plus"
+          ctaHref="#"
+          ctaVariant="primary"
+          ctaDisabled
+          ctaSubLabel="Stripe-integratie volgt"
+          features={[
+            { ok: true, text: 'Meerdere gebruikers / team', strong: true },
+            { ok: true, text: 'Onbeperkt projecten + issues', strong: true },
+            { ok: true, text: 'Alle 7 statussen', },
+            { ok: true, text: 'MCP-server — 20 tools voor Claude Code', strong: true },
+            { ok: true, text: 'GitHub auto-integratie (webhook + polling)', strong: true },
+            { ok: true, text: 'Magic words: Fixes UP-42 → auto-Done' },
+            { ok: true, text: 'Cycles, sub-issues, linked issues' },
+            { ok: true, text: 'Onbeperkt custom views' },
+            { ok: true, text: 'Volledig activity log' },
+            { ok: true, text: 'Geen branding · email support' },
+          ]}
+        />
+
+        <PricingCard
+          name="Pro"
           price={`€${proPrice}`}
-          period={proPeriod}
-          caption={proCaption}
+          period={period}
+          caption={billing === 'monthly' ? 'of €150/jaar — 2 maanden gratis' : '€12,50/maand effectief'}
           cta="Upgrade naar Pro"
           ctaHref="#"
           ctaVariant="primary"
           ctaDisabled
           ctaSubLabel="Stripe-integratie volgt"
           features={[
-            { ok: true, text: 'Meerdere gebruikers / team samenwerking', strong: true },
-            { ok: true, text: 'Onbeperkt projecten + issues', strong: true },
-            { ok: true, text: 'Alle 7 statussen (incl. Triage, In Review, Cancelled)' },
-            { ok: true, text: 'MCP-server — 20 tools voor Claude Code', strong: true },
-            { ok: true, text: 'GitHub auto-integratie (webhook + polling)', strong: true },
-            { ok: true, text: 'Magic words: Fixes/Closes/Resolves UP-42 → auto-Done' },
-            { ok: true, text: 'Cycles (sprints) met progress-tracking' },
-            { ok: true, text: 'Sub-issues + linked issues (blocks/blocked-by)' },
-            { ok: true, text: 'Onbeperkt custom views' },
-            { ok: true, text: 'Volledig activity log (geen retentie-limiet)' },
-            { ok: true, text: 'Geen branding · email support' },
+            { ok: true, text: 'Alles van Plus' },
+            { ok: true, text: 'Multi-workspace — 1 account, meerdere bedrijven', strong: true },
+            { ok: true, text: 'Eigen prefixes per workspace (UP-, FIF-, ...)', strong: true },
+            { ok: true, text: 'GitHub OAuth login (SSO)', strong: true },
+            { pending: true, text: 'Custom workflows per workspace' },
+            { pending: true, text: 'Roadmap / Gantt view' },
+            { pending: true, text: 'Audit log met CSV-export' },
+            { pending: true, text: 'Slack / Discord notificaties' },
+            { pending: true, text: 'White-label branding' },
+            { pending: true, text: 'Bulk operations + CSV import' },
+            { pending: true, text: 'Priority support + onboarding-call' },
           ]}
         />
       </div>
@@ -324,11 +345,13 @@ function Pricing({ billing, onBilling }: { billing: BillingCycle; onBilling: (b:
   );
 }
 
+type FeatureLine = { ok?: boolean; pending?: boolean; text: string; strong?: boolean };
+
 function PricingCard({ name, price, period, caption, cta, ctaHref, ctaVariant, ctaDisabled, ctaSubLabel, features, badge, highlight }: {
   name: string;
   price: string; period: string; caption: string;
   cta: string; ctaHref: string; ctaVariant: 'primary' | 'outline'; ctaDisabled?: boolean; ctaSubLabel?: string;
-  features: { ok: boolean; text: string; strong?: boolean }[];
+  features: FeatureLine[];
   badge?: string; highlight?: boolean;
 }) {
   return (
@@ -379,22 +402,33 @@ function PricingCard({ name, price, period, caption, cta, ctaHref, ctaVariant, c
       <div style={{ borderTop: '1px solid var(--border)', margin: '22px 0 16px' }} />
 
       <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-        {features.map((f, i) => (
-          <li key={i} style={{
-            display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10,
-            fontSize: 13, color: f.ok ? 'var(--text)' : 'var(--text-dim)',
-            fontWeight: f.strong ? 600 : 400,
-          }}>
-            <span style={{
-              flexShrink: 0, marginTop: 2,
-              color: f.ok ? (highlight ? 'var(--accent)' : '#10B981') : 'var(--text-dim)',
-              opacity: f.ok ? 1 : 0.45, display: 'inline-flex',
+        {features.map((f, i) => {
+          const state = f.pending ? 'pending' : f.ok ? 'ok' : 'no';
+          const color = state === 'ok' ? (highlight ? 'var(--accent)' : '#10B981')
+            : state === 'pending' ? '#FBBF24' : 'var(--text-dim)';
+          const opacity = state === 'no' ? 0.45 : 1;
+          const textColor = state === 'no' ? 'var(--text-dim)' : 'var(--text)';
+          return (
+            <li key={i} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10,
+              fontSize: 13, color: textColor, fontWeight: f.strong ? 600 : 400,
             }}>
-              {f.ok ? <Icon name="check" size={13} /> : <Icon name="close" size={13} />}
-            </span>
-            <span>{f.text}</span>
-          </li>
-        ))}
+              <span style={{ flexShrink: 0, marginTop: 2, color, opacity, display: 'inline-flex' }}>
+                {state === 'ok' && <Icon name="check" size={13} />}
+                {state === 'pending' && <Icon name="estimate" size={13} />}
+                {state === 'no' && <Icon name="close" size={13} />}
+              </span>
+              <span style={{ flex: 1 }}>{f.text}</span>
+              {state === 'pending' && (
+                <span style={{
+                  fontSize: 9, padding: '1px 5px', borderRadius: 4, flexShrink: 0,
+                  background: 'rgba(251,191,36,0.12)', color: '#FBBF24',
+                  fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase',
+                }}>Soon</span>
+              )}
+            </li>
+          );
+        })}
       </ul>
 
       {badge && (

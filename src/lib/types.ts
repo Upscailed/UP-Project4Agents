@@ -62,6 +62,20 @@ export interface Team {
   created_at: string;
 }
 
+/** Alias voor Team — multi-workspace UI noemt het workspace. */
+export type Workspace = Team;
+
+export interface WorkspaceMember {
+  workspace_id: string;
+  user_id: string;
+  role: 'admin' | 'member';
+  joined_at: string;
+}
+
+export interface WorkspaceWithRole extends Team {
+  role: 'admin' | 'member';
+}
+
 export interface Issue {
   id: string;
   identifier: string;        // e.g. "UP-42"

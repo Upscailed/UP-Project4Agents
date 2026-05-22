@@ -37,8 +37,9 @@ function initSchema(db: Database.Database) {
       id TEXT PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
-      password_hash TEXT NOT NULL,
+      password_hash TEXT DEFAULT '',
       avatar_url TEXT DEFAULT '',
+      github_id INTEGER UNIQUE,
       role TEXT DEFAULT 'member',
       created_at TEXT DEFAULT (datetime('now'))
     );
@@ -50,6 +51,16 @@ function initSchema(db: Database.Database) {
       description TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS workspace_members (
+      workspace_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT DEFAULT 'member',
+      joined_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (workspace_id, user_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ws_members_user ON workspace_members(user_id);
 
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -165,6 +176,9 @@ function migrate(db: Database.Database) {
     }
   };
 
+  // Users — github_id voor OAuth
+  addColumn('users', 'github_id', 'INTEGER');
+
   // Issues — nieuwe kolommen.
   // Let op: SQLite staat geen REFERENCES toe in ALTER TABLE ADD COLUMN als foreign_keys=ON.
   // De rebuild hieronder zet de FKs alsnog netjes als de oude tabel een CHECK had.
@@ -260,8 +274,10 @@ function seedDefaults(db: Database.Database) {
 }
 
 function nextIdentifier(db: Database.Database, teamKey = 'UP'): string {
-  const stmt = db.prepare("UPDATE counters SET value = value + 1 WHERE key = 'issue_seq' RETURNING value");
-  const row = stmt.get() as { value: number };
+  // Per-workspace counter. Key: 'issue_seq:UP', 'issue_seq:FIF', etc.
+  const counterKey = `issue_seq:${teamKey}`;
+  db.prepare(`INSERT OR IGNORE INTO counters (key, value) VALUES (?, 0)`).run(counterKey);
+  const row = db.prepare(`UPDATE counters SET value = value + 1 WHERE key = ? RETURNING value`).get(counterKey) as { value: number };
   return `${teamKey}-${row.value}`;
 }
 
@@ -306,6 +322,12 @@ export function createUser(input: { email: string; name: string; password_hash: 
   const role = userCount === 0 ? 'admin' : 'member';  // eerste user = admin
   db.prepare(`INSERT INTO users (id, email, name, password_hash, avatar_url, role) VALUES (?, ?, ?, ?, ?, ?)`)
     .run(id, input.email, input.name, input.password_hash, input.avatar_url || '', role);
+
+  // Eerste user wordt admin van default workspace; volgende users worden member van default
+  const defaultWs = getDefaultTeam();
+  db.prepare(`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)`)
+    .run(defaultWs.id, id, role === 'admin' ? 'admin' : 'member');
+
   return db.prepare(`SELECT id, email, name, avatar_url, role FROM users WHERE id = ?`).get(id) as any;
 }
 
@@ -313,7 +335,44 @@ export function userCount(): number {
   return (getDb().prepare(`SELECT COUNT(*) as c FROM users`).get() as any).c;
 }
 
-// ── Teams ──
+export function getUserByGithubId(githubId: number): import('./types').User | undefined {
+  return getDb().prepare(`SELECT * FROM users WHERE github_id = ?`).get(githubId) as any;
+}
+
+export function linkGithubId(userId: string, githubId: number, avatarUrl?: string) {
+  getDb().prepare(`UPDATE users SET github_id = ?, avatar_url = COALESCE(NULLIF(?, ''), avatar_url) WHERE id = ?`)
+    .run(githubId, avatarUrl || '', userId);
+}
+
+/** Vind of maak user via GitHub OAuth profile. */
+export function findOrCreateGithubUser(input: { github_id: number; email: string; name: string; avatar_url?: string }): import('./types').SafeUser {
+  const db = getDb();
+  // 1. Bestaat al via github_id
+  const byGh = getUserByGithubId(input.github_id);
+  if (byGh) return { id: byGh.id, email: byGh.email, name: byGh.name, avatar_url: byGh.avatar_url, role: byGh.role };
+
+  // 2. Bestaat via email → koppel github_id
+  const byEmail = getUserByEmail(input.email);
+  if (byEmail) {
+    linkGithubId(byEmail.id, input.github_id, input.avatar_url);
+    return { id: byEmail.id, email: byEmail.email, name: byEmail.name, avatar_url: input.avatar_url || byEmail.avatar_url, role: byEmail.role };
+  }
+
+  // 3. Nieuwe user — random password_hash (OAuth-only, geen password-login mogelijk)
+  const id = uuidv4();
+  const userCnt = (db.prepare(`SELECT COUNT(*) as c FROM users`).get() as any).c;
+  const role = userCnt === 0 ? 'admin' : 'member';
+  // password is leeg → password-login geblokkeerd door verifyPassword (geen geldig scrypt-formaat)
+  db.prepare(`INSERT INTO users (id, email, name, password_hash, avatar_url, github_id, role) VALUES (?, ?, ?, '', ?, ?, ?)`)
+    .run(id, input.email, input.name, input.avatar_url || '', input.github_id, role);
+  // Auto-add aan default workspace
+  const defaultWs = getDefaultTeam();
+  db.prepare(`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)`)
+    .run(defaultWs.id, id, role === 'admin' ? 'admin' : 'member');
+  return db.prepare(`SELECT id, email, name, avatar_url, role FROM users WHERE id = ?`).get(id) as any;
+}
+
+// ── Teams / Workspaces ──
 
 export function listTeams(): Team[] {
   return getDb().prepare('SELECT * FROM teams ORDER BY created_at ASC').all() as Team[];
@@ -327,6 +386,54 @@ export function getDefaultTeam(): Team {
   const t = getDb().prepare('SELECT * FROM teams ORDER BY created_at ASC LIMIT 1').get() as Team | undefined;
   if (!t) throw new Error('No team configured');
   return t;
+}
+
+/** Workspaces waar deze user lid van is. */
+export function listWorkspacesForUser(userId: string): import('./types').WorkspaceWithRole[] {
+  return getDb().prepare(`
+    SELECT t.*, m.role
+    FROM teams t
+    INNER JOIN workspace_members m ON m.workspace_id = t.id
+    WHERE m.user_id = ?
+    ORDER BY t.created_at ASC
+  `).all(userId) as any;
+}
+
+/** Maak een workspace + maak de creator admin. Reserveert eigen counter. */
+export function createWorkspace(input: { key: string; name: string; description?: string; creator_user_id: string }): Team {
+  const db = getDb();
+  const id = uuidv4();
+  const key = input.key.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'WS';
+  // unique-key check
+  const existing = db.prepare(`SELECT 1 FROM teams WHERE key = ?`).get(key);
+  if (existing) throw new Error(`Workspace key "${key}" bestaat al`);
+
+  db.prepare(`INSERT INTO teams (id, key, name, description) VALUES (?, ?, ?, ?)`)
+    .run(id, key, input.name, input.description || '');
+  db.prepare(`INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, 'admin')`)
+    .run(id, input.creator_user_id);
+  // initialiseer counter
+  db.prepare(`INSERT OR IGNORE INTO counters (key, value) VALUES (?, 0)`).run(`issue_seq:${key}`);
+  return getTeam(id)!;
+}
+
+export function addUserToWorkspace(workspaceId: string, userId: string, role: 'admin' | 'member' = 'member') {
+  getDb().prepare(`INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)`)
+    .run(workspaceId, userId, role);
+}
+
+export function isWorkspaceMember(workspaceId: string, userId: string): boolean {
+  return !!getDb().prepare(`SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?`).get(workspaceId, userId);
+}
+
+export function listWorkspaceMembers(workspaceId: string) {
+  return getDb().prepare(`
+    SELECT u.id, u.email, u.name, u.avatar_url, m.role, m.joined_at
+    FROM workspace_members m
+    INNER JOIN users u ON u.id = m.user_id
+    WHERE m.workspace_id = ?
+    ORDER BY m.joined_at ASC
+  `).all(workspaceId);
 }
 
 // ── Projects ──

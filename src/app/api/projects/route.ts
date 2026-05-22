@@ -9,9 +9,15 @@ export async function GET(req: NextRequest) {
     if (id) {
       const project = getProject(id);
       if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+      // Cross-workspace check
+      if (auth.workspace && project.team_id && project.team_id !== auth.workspace.id) {
+        return NextResponse.json({ error: 'Project hoort bij andere workspace' }, { status: 403 });
+      }
       return NextResponse.json(project);
     }
-    return NextResponse.json(listProjects());
+    const all = listProjects();
+    const wsId = auth.workspace?.id;
+    return NextResponse.json(wsId ? all.filter(p => p.team_id === wsId) : all);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
@@ -22,6 +28,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     if (!body.name) return NextResponse.json({ error: 'name is required' }, { status: 400 });
+    // Auto-inject huidige workspace als geen team_id meegegeven
+    if (!body.team_id && auth.workspace) body.team_id = auth.workspace.id;
     const project = createProject(body);
     return NextResponse.json(project, { status: 201 });
   } catch (e: any) {

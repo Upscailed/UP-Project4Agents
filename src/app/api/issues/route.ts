@@ -10,6 +10,9 @@ export async function GET(req: NextRequest) {
     if (id) {
       const issue = getIssue(id);
       if (!issue) return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
+      if (auth.workspace && issue.team_id && issue.team_id !== auth.workspace.id) {
+        return NextResponse.json({ error: 'Issue hoort bij andere workspace' }, { status: 403 });
+      }
       const subs = listSubIssues(issue.id);
       return NextResponse.json({ ...issue, sub_issues: subs });
     }
@@ -20,7 +23,7 @@ export async function GET(req: NextRequest) {
     };
     const issues = listIssues({
       project_id: sp.get('project_id') || undefined,
-      team_id: sp.get('team_id') || undefined,
+      team_id: sp.get('team_id') || auth.workspace?.id,  // impliciete workspace-filter
       status: splitMulti('status'),
       priority: splitMulti('priority'),
       assignee: sp.get('assignee') ?? undefined,
@@ -42,6 +45,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     if (!body.project_id) return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
     if (!body.title) return NextResponse.json({ error: 'title is required' }, { status: 400 });
+    // team_id komt sowieso uit project via createIssue, maar honoreer hier override
     const issue = createIssue(body);
     return NextResponse.json(issue, { status: 201 });
   } catch (e: any) {

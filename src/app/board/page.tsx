@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Icon, IconName } from '@/components/Icon';
 
 interface Me { id: string; email: string; name: string; avatar_url: string; role: 'admin' | 'member'; }
+interface Workspace { id: string; key: string; name: string; description: string; role?: 'admin' | 'member'; }
 
 // ── Types ──
 type IssueStatus = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
@@ -88,6 +89,9 @@ type Tab = 'board' | 'cycles' | 'activity';
 export default function Board() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
+  const [currentWs, setCurrentWs] = useState<Workspace | null>(null);
+  const [userWorkspaces, setUserWorkspaces] = useState<Workspace[]>([]);
+  const [showNewWs, setShowNewWs] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -134,9 +138,28 @@ export default function Board() {
     fetch('/api/me').then(r => r.json()).then(d => {
       if (!d.user) { router.push('/login?redirect=/board'); return; }
       setMe(d.user);
+      setCurrentWs(d.workspace || null);
+      setUserWorkspaces(d.workspaces || []);
       setAuthChecked(true);
     }).catch(() => router.push('/login?redirect=/board'));
   }, [router]);
+
+  const switchWorkspace = async (workspaceId: string) => {
+    await fetch('/api/workspaces/switch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace_id: workspaceId }),
+    });
+    const d = await fetch('/api/me').then(r => r.json());
+    setCurrentWs(d.workspace || null);
+    setSelectedProject(null); setSelectedView(null);
+    loadProjects(); loadIssues(); loadCycles();
+  };
+
+  const refreshWorkspaces = async () => {
+    const d = await fetch('/api/me').then(r => r.json());
+    setUserWorkspaces(d.workspaces || []);
+    setCurrentWs(d.workspace || null);
+  };
 
   useEffect(() => { if (authChecked) { loadProjects(); loadCycles(); loadViews(); } }, [authChecked, loadProjects, loadCycles, loadViews]);
   useEffect(() => { if (authChecked) loadIssues(); }, [authChecked, loadIssues]);
@@ -187,19 +210,14 @@ export default function Board() {
         width: 280, borderRight: '1px solid var(--border)', background: 'var(--bg-surface)',
         display: 'flex', flexDirection: 'column', flexShrink: 0,
       }}>
-        {/* Logo */}
-        <div style={{ padding: '20px 16px 12px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14,
-              letterSpacing: '-0.5px',
-            }}>UP</div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.2px' }}>Project4Agents</div>
-              <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>AI Project Management</div>
-            </div>
-          </div>
+        {/* Workspace switcher */}
+        <div style={{ padding: '12px', borderBottom: '1px solid var(--border)' }}>
+          <WorkspaceSwitcher
+            current={currentWs}
+            workspaces={userWorkspaces}
+            onSwitch={switchWorkspace}
+            onCreateNew={() => setShowNewWs(true)}
+          />
         </div>
 
         {/* Search */}
@@ -493,7 +511,175 @@ export default function Board() {
           onClose={() => setShowNewCycle(false)}
         />
       )}
+
+      {showNewWs && (
+        <NewWorkspaceModal
+          onCreated={async (newWs) => {
+            setShowNewWs(false);
+            await refreshWorkspaces();
+            // Switch direct naar de nieuwe workspace
+            await switchWorkspace(newWs.id);
+          }}
+          onClose={() => setShowNewWs(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Workspace switcher ──
+function WorkspaceSwitcher({ current, workspaces, onSwitch, onCreateNew }: {
+  current: Workspace | null; workspaces: Workspace[];
+  onSwitch: (id: string) => void; onCreateNew: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const h = () => setOpen(false);
+    setTimeout(() => window.addEventListener('click', h, { once: true }), 0);
+    return () => window.removeEventListener('click', h);
+  }, [open]);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button onClick={e => { e.stopPropagation(); setOpen(!open); }} style={{
+        width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border)',
+        borderRadius: 8, padding: '8px 10px',
+        display: 'flex', alignItems: 'center', gap: 10,
+        cursor: 'pointer', color: 'var(--text)',
+      }}>
+        <div style={{
+          width: 30, height: 30, borderRadius: 7,
+          background: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontWeight: 800, fontSize: 11, color: 'white', letterSpacing: '-0.2px',
+          flexShrink: 0,
+        }}>{current?.key.slice(0, 3) || 'UP'}</div>
+        <div style={{ flex: 1, textAlign: 'left', overflow: 'hidden' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {current?.name || 'Geen workspace'}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>
+            {workspaces.length} workspace{workspaces.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+        <span style={{ color: 'var(--text-dim)', display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
+          <Icon name="arrow_right" size={12} />
+        </span>
+      </button>
+
+      {open && (
+        <div onClick={e => e.stopPropagation()} style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+          background: 'var(--bg-surface)', border: '1px solid var(--border)',
+          borderRadius: 8, padding: 6, zIndex: 20,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+        }}>
+          <div style={{
+            fontSize: 10, fontWeight: 600, color: 'var(--text-dim)',
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+            padding: '8px 8px 4px',
+          }}>Switch workspace</div>
+          {workspaces.map(w => {
+            const active = w.id === current?.id;
+            return (
+              <button key={w.id} onClick={() => { setOpen(false); if (!active) onSwitch(w.id); }} style={{
+                width: '100%', padding: '8px 8px', borderRadius: 6, border: 'none',
+                background: active ? 'var(--accent-glow)' : 'transparent',
+                color: active ? 'var(--text)' : 'var(--text-muted)',
+                cursor: 'pointer', fontSize: 13, textAlign: 'left',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <span style={{
+                  width: 22, height: 22, borderRadius: 5,
+                  background: 'var(--bg-card)',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: 700, fontSize: 9, fontFamily: 'monospace', color: 'var(--text-muted)',
+                }}>{w.key}</span>
+                <span style={{ flex: 1 }}>{w.name}</span>
+                {active && <Icon name="check" size={12} />}
+                {w.role === 'admin' && !active && (
+                  <span style={{
+                    fontSize: 9, padding: '1px 5px', borderRadius: 3,
+                    background: 'var(--accent-glow)', color: 'var(--accent)',
+                    fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase',
+                  }}>Admin</span>
+                )}
+              </button>
+            );
+          })}
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 4 }}>
+            <button onClick={() => { setOpen(false); onCreateNew(); }} style={{
+              width: '100%', padding: '8px 8px', borderRadius: 6, border: 'none',
+              background: 'transparent', color: 'var(--accent)',
+              cursor: 'pointer', fontSize: 13, textAlign: 'left',
+              display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600,
+            }}>
+              <Icon name="plus" size={12} /> Nieuwe workspace
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── New workspace modal ──
+function NewWorkspaceModal({ onCreated, onClose }: { onCreated: (ws: Workspace) => void; onClose: () => void }) {
+  const [name, setName] = useState('');
+  const [key, setKey] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  // Auto-genereer key uit naam
+  useEffect(() => {
+    if (!key && name) {
+      const auto = name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
+      setKey(auto);
+    }
+  }, [name, key]);
+
+  const submit = async () => {
+    if (!name.trim() || !key.trim()) return;
+    setError(null);
+    const res = await fetch('/api/workspaces', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, key }),
+    });
+    const data = await res.json();
+    if (!res.ok) { setError(data.error || 'Mislukt'); return; }
+    onCreated(data);
+  };
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <h3 style={modalH()}>Nieuwe workspace</h3>
+      <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 14 }}>
+        Eigen workspace voor een bedrijf of team — eigen issue-prefix, eigen projecten.
+      </p>
+      <Field label="Naam">
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="bv. Fit In Finance" autoFocus
+          style={{ ...selectStyle(), width: '100%' }} />
+      </Field>
+      <Field label="Issue prefix">
+        <input value={key} onChange={e => setKey(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+          placeholder="bv. FIF" maxLength={5}
+          style={{ ...selectStyle(), width: '100%', fontFamily: 'monospace', textTransform: 'uppercase' }} />
+        <span style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 4, display: 'block' }}>
+          Issues krijgen identifiers als {key || 'XXX'}-1, {key || 'XXX'}-2, ...
+        </span>
+      </Field>
+      {error && (
+        <div style={{
+          padding: '8px 12px', borderRadius: 6, marginBottom: 12,
+          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+          color: '#FCA5A5', fontSize: 12,
+        }}>{error}</div>
+      )}
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 14 }}>
+        <button onClick={onClose} style={btnStyle('outline')}>Annuleer</button>
+        <button onClick={submit} style={btnStyle('primary')}>Aanmaken</button>
+      </div>
+    </ModalOverlay>
   );
 }
 

@@ -24,7 +24,11 @@ function LoginInner() {
       if (d.user) router.push(redirect);
       if (d.isFirstSetup) { setFirstSetup(true); setMode('signup'); }
     }).catch(() => {});
-  }, [router, redirect]);
+
+    // Lees ?error= van OAuth-callback failure
+    const err = params.get('error');
+    if (err) setError(err);
+  }, [router, redirect, params]);
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -85,6 +89,26 @@ function LoginInner() {
             ? 'Eerste account wordt automatisch admin.'
             : mode === 'login' ? 'Log in om verder te gaan.' : 'Even snel — onder een minuut.'}
         </p>
+
+        {/* GitHub OAuth */}
+        <a href={`/api/auth/github/start`} style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          width: '100%', padding: '11px 16px', borderRadius: 8,
+          background: 'var(--bg-card)', border: '1px solid var(--border)',
+          color: 'var(--text)', fontSize: 14, fontWeight: 600,
+          textDecoration: 'none', marginBottom: 16,
+        }}>
+          <Icon name="github" size={16} /> Inloggen met GitHub
+        </a>
+
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16,
+          fontSize: 11, color: 'var(--text-dim)',
+        }}>
+          <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          <span>of</span>
+          <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        </div>
 
         <form onSubmit={submit}>
           {mode === 'signup' && (
