@@ -1,32 +1,75 @@
 // ── UP/Project4Agents — Core Types ──
 
-export type IssueStatus = 'backlog' | 'planned' | 'in_progress' | 'done' | 'cancelled';
+export type IssueStatus =
+  | 'triage'        // nieuwe issues die nog gerouteerd moeten worden
+  | 'backlog'       // toekomstig werk, niet gepland
+  | 'todo'          // gepland, klaar om opgepakt te worden
+  | 'in_progress'   // er wordt aan gewerkt
+  | 'in_review'     // PR open / wacht op review
+  | 'done'          // afgerond
+  | 'cancelled';    // niet meer relevant
+
 export type IssuePriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
+
+export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicates' | 'duplicate_of';
+
+export type ActivityType =
+  | 'issue_created'
+  | 'status_changed'
+  | 'priority_changed'
+  | 'assignee_changed'
+  | 'cycle_changed'
+  | 'comment_added'
+  | 'branch_linked'
+  | 'pr_linked'
+  | 'pr_opened'
+  | 'pr_review_requested'
+  | 'pr_merged'
+  | 'pr_closed'
+  | 'linked_issue_added'
+  | 'parent_changed';
 
 export interface Project {
   id: string;
   name: string;
   description: string;
   color: string;
+  team_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Team {
+  id: string;
+  key: string;            // bv. "UP" voor issue prefix
+  name: string;
+  description: string;
+  created_at: string;
 }
 
 export interface Issue {
   id: string;
   identifier: string;        // e.g. "UP-42"
   project_id: string;
+  team_id: string | null;
   title: string;
   description: string;
   status: IssueStatus;
   priority: IssuePriority;
   labels: string;             // JSON array of label strings
   acceptance_criteria: string; // markdown
+  assignee: string;           // 'user' | 'agent' | agent-naam | ''
+  parent_issue_id: string | null;
+  estimate: number | null;    // story points
+  due_date: string | null;    // ISO date
+  cycle_id: string | null;
   github_branch: string;
   github_pr_url: string;
+  github_pr_number: number | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
+  started_at: string | null;
   completed_at: string | null;
 }
 
@@ -38,28 +81,76 @@ export interface Comment {
   created_at: string;
 }
 
+export interface Cycle {
+  id: string;
+  team_id: string | null;
+  name: string;
+  description: string;
+  starts_at: string;          // ISO date
+  ends_at: string;            // ISO date
+  status: 'upcoming' | 'active' | 'completed';
+  created_at: string;
+}
+
+export interface IssueLink {
+  id: string;
+  from_issue_id: string;
+  to_issue_id: string;
+  link_type: LinkType;
+  created_at: string;
+}
+
+export interface Activity {
+  id: string;
+  issue_id: string | null;
+  project_id: string | null;
+  actor: string;              // 'user' | 'agent' | 'github' | agent-naam
+  type: ActivityType;
+  payload: string;            // JSON
+  created_at: string;
+}
+
+export interface View {
+  id: string;
+  name: string;
+  description: string;
+  // JSON filter, bv. { status: ['todo','in_progress'], assignee: 'agent', priority: ['high','urgent'] }
+  filter: string;
+  icon: string;
+  sort_order: number;
+  created_at: string;
+}
+
 // ── API Request/Response shapes ──
 
 export interface CreateProjectInput {
   name: string;
   description?: string;
   color?: string;
+  team_id?: string | null;
 }
 
 export interface UpdateProjectInput {
   name?: string;
   description?: string;
   color?: string;
+  team_id?: string | null;
 }
 
 export interface CreateIssueInput {
   project_id: string;
+  team_id?: string | null;
   title: string;
   description?: string;
   status?: IssueStatus;
   priority?: IssuePriority;
   labels?: string[];
   acceptance_criteria?: string;
+  assignee?: string;
+  parent_issue_id?: string | null;
+  estimate?: number | null;
+  due_date?: string | null;
+  cycle_id?: string | null;
   github_branch?: string;
 }
 
@@ -70,9 +161,16 @@ export interface UpdateIssueInput {
   priority?: IssuePriority;
   labels?: string[];
   acceptance_criteria?: string;
+  assignee?: string;
+  parent_issue_id?: string | null;
+  estimate?: number | null;
+  due_date?: string | null;
+  cycle_id?: string | null;
   github_branch?: string;
   github_pr_url?: string;
+  github_pr_number?: number | null;
   project_id?: string;
+  team_id?: string | null;
   sort_order?: number;
 }
 
@@ -80,6 +178,25 @@ export interface CreateCommentInput {
   issue_id: string;
   author?: string;
   body: string;
+}
+
+export interface CreateCycleInput {
+  name: string;
+  description?: string;
+  starts_at: string;
+  ends_at: string;
+  team_id?: string | null;
+}
+
+export interface CreateLinkInput {
+  from_issue_id: string;
+  to_issue_id: string;
+  link_type: LinkType;
+}
+
+export interface ClaimIssueInput {
+  assignee: string;           // wie claimt 'm
+  comment?: string;           // optionele eerste comment
 }
 
 // ── Board View ──
@@ -90,18 +207,20 @@ export interface BoardColumn {
   issues: Issue[];
 }
 
-export const STATUS_COLUMNS: { status: IssueStatus; label: string; color: string }[] = [
-  { status: 'backlog',     label: 'Backlog',     color: '#6B7280' },
-  { status: 'planned',     label: 'Planned',     color: '#8B5CF6' },
-  { status: 'in_progress', label: 'In Progress', color: '#F59E0B' },
-  { status: 'done',        label: 'Done',        color: '#10B981' },
-  { status: 'cancelled',   label: 'Cancelled',   color: '#EF4444' },
+export const STATUS_COLUMNS: { status: IssueStatus; label: string; color: string; icon: string }[] = [
+  { status: 'triage',      label: 'Triage',      color: '#EC4899', icon: '⊙' },
+  { status: 'backlog',     label: 'Backlog',     color: '#6B7280', icon: '○' },
+  { status: 'todo',        label: 'Todo',        color: '#94A3B8', icon: '◔' },
+  { status: 'in_progress', label: 'In Progress', color: '#F59E0B', icon: '◑' },
+  { status: 'in_review',   label: 'In Review',   color: '#A78BFA', icon: '◕' },
+  { status: 'done',        label: 'Done',        color: '#10B981', icon: '●' },
+  { status: 'cancelled',   label: 'Cancelled',   color: '#EF4444', icon: '✕' },
 ];
 
-export const PRIORITY_CONFIG: Record<IssuePriority, { label: string; icon: string; color: string }> = {
-  none:   { label: 'No priority', icon: '—',  color: '#6B7280' },
-  low:    { label: 'Low',         icon: '↓',  color: '#60A5FA' },
-  medium: { label: 'Medium',      icon: '→',  color: '#FBBF24' },
-  high:   { label: 'High',        icon: '↑',  color: '#FB923C' },
-  urgent: { label: 'Urgent',      icon: '⚡', color: '#EF4444' },
+export const PRIORITY_CONFIG: Record<IssuePriority, { label: string; icon: string; color: string; weight: number }> = {
+  urgent: { label: 'Urgent',      icon: '⚡', color: '#EF4444', weight: 4 },
+  high:   { label: 'High',        icon: '↑',  color: '#FB923C', weight: 3 },
+  medium: { label: 'Medium',      icon: '→',  color: '#FBBF24', weight: 2 },
+  low:    { label: 'Low',         icon: '↓',  color: '#60A5FA', weight: 1 },
+  none:   { label: 'No priority', icon: '—',  color: '#6B7280', weight: 0 },
 };

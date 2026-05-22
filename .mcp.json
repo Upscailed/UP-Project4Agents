@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "project4agents": {
+      "command": "node",
+      "args": ["./scripts/mcp-server.mjs"],
+      "env": {
+        "P4A_API": "http://localhost:3400/api"
+      }
+    }
+  }
+}
