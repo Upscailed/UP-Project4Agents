@@ -15,12 +15,17 @@
  * je geen user-input direct doorgeeft buiten de tagged-template heen.
  */
 
-const API_BASE = 'https://api.supabase.com/v1/projects';
-
 function env(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`${name} ontbreekt in .env.local`);
   return v;
+}
+
+// PostgREST RPC endpoint: https://{ref}.supabase.co/rest/v1/rpc/raw_sql_exec
+// Veel hogere rate-limit dan Management API. service_role JWT vereist.
+function postgrestUrl(): string {
+  const ref = env('SUPABASE_PROJECT_REF');
+  return `https://${ref}.supabase.co/rest/v1/rpc/raw_sql_exec`;
 }
 
 // ── Value escaping ──
@@ -122,17 +127,20 @@ async function executeSql(query: string): Promise<any[] & { count: number }> {
 }
 
 async function _executeWithRetry(query: string, attempt = 0): Promise<any[] & { count: number }> {
-  const PAT = env('SUPABASE_ACCESS_TOKEN');
-  const REF = env('SUPABASE_PROJECT_REF');
-  const url = `${API_BASE}/${REF}/database/query`;
+  const KEY = env('SUPABASE_SERVICE_ROLE_KEY');
+  const url = postgrestUrl();
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${PAT}`, 'Content-Type': 'application/json' },
+    headers: {
+      'apikey': KEY,
+      'Authorization': `Bearer ${KEY}`,
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({ query }),
   });
 
-  // 429: backoff + retry
+  // 429 mag, retry met backoff
   if (res.status === 429 && attempt < 4) {
     const delay = Math.min(2000, 200 * Math.pow(2, attempt)) + Math.random() * 100;
     await new Promise(r => setTimeout(r, delay));
@@ -149,6 +157,7 @@ async function _executeWithRetry(query: string, attempt = 0): Promise<any[] & { 
   try { parsed = JSON.parse(text); }
   catch { throw new Error(`Geen JSON response: ${text.slice(0, 200)}`); }
 
+  // raw_sql_exec returnt het jsonb-array direct (of null voor non-SELECT zoals INSERT/UPDATE/DELETE)
   const rows: any[] = Array.isArray(parsed) ? parsed : [];
   (rows as any).count = rows.length;
   return rows as any[] & { count: number };
