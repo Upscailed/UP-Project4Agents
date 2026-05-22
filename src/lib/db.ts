@@ -801,6 +801,21 @@ export async function applyGithubPrEvent(event: {
         title: event.title, identifier: ident, source_repo: actual_repo,
       },
       { issue_id: issue.id, project_id: issue.project_id, actor: 'github' });
+
+    // Auto-comment voor zichtbaarheid in de issue-feed
+    const commentBody =
+      event.action === 'opened' || event.action === 'reopened'
+        ? `🔗 [GitHub] PR #${event.pr_number} ${event.action}: **${event.title}** — ${event.pr_url}`
+      : event.action === 'review_requested'
+        ? `👀 [GitHub] Review requested op PR #${event.pr_number}: ${event.pr_url}`
+      : event.action === 'closed' && event.merged
+        ? `✅ [GitHub] PR #${event.pr_number} merged → status nu **done**. ${event.pr_url}`
+      : event.action === 'closed' && !event.merged
+        ? `⊘ [GitHub] PR #${event.pr_number} closed zonder merge. Status terug naar todo. ${event.pr_url}`
+      : null;
+    if (commentBody) {
+      await createComment({ issue_id: issue.id, author: 'github:webhook', body: commentBody });
+    }
     touched.push({ identifier: ident, new_status: newStatus });
   }
   return { touched, skipped };

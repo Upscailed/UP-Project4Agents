@@ -132,14 +132,21 @@ async function handlePush(payload: any, sourceRepo: string | null) {
       continue;
     }
 
-    if (issue.github_branch !== branch) {
+    const commits = (payload.commits || []).length;
+    const isNewBranchLink = issue.github_branch !== branch;
+    if (isNewBranchLink) {
       await updateIssue(issue.id, { github_branch: branch }, 'github');
     }
     if (issue.status === 'todo' || issue.status === 'backlog') {
       await updateIssue(issue.id, { status: 'in_progress' }, 'github');
     }
-    await logActivityPublic('branch_linked', { branch, commits: (payload.commits || []).length, identifier: ident, source_repo: sourceRepo },
+    await logActivityPublic('branch_linked', { branch, commits, identifier: ident, source_repo: sourceRepo },
       { issue_id: issue.id, project_id: issue.project_id, actor: 'github' });
+    // Auto-comment voor zichtbaarheid
+    const commentBody = isNewBranchLink
+      ? `🌿 [GitHub] Branch \`${branch}\` aangemaakt in ${sourceRepo} (${commits} commits). Status → in_progress.`
+      : `🌿 [GitHub] Branch \`${branch}\` bijgewerkt — ${commits} nieuwe commit${commits !== 1 ? 's' : ''}.`;
+    await createComment({ issue_id: issue.id, author: 'github:webhook', body: commentBody });
     touched.push(ident);
   }
 
