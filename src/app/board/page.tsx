@@ -5,7 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Icon, IconName } from '@/components/Icon';
 
-interface Me { id: string; email: string; name: string; avatar_url: string; role: 'admin' | 'member'; }
+interface Me {
+  id: string; email: string; name: string; avatar_url: string;
+  role: 'admin' | 'member';
+  plan?: 'free' | 'plus' | 'pro';
+  plan_until?: string | null;
+}
 interface Workspace { id: string; key: string; name: string; description: string; role?: 'admin' | 'member'; }
 
 // ── Types ──
@@ -92,6 +97,7 @@ export default function Board() {
   const [currentWs, setCurrentWs] = useState<Workspace | null>(null);
   const [userWorkspaces, setUserWorkspaces] = useState<Workspace[]>([]);
   const [showNewWs, setShowNewWs] = useState(false);
+  const [showMembers, setShowMembers] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -217,6 +223,7 @@ export default function Board() {
             workspaces={userWorkspaces}
             onSwitch={switchWorkspace}
             onCreateNew={() => setShowNewWs(true)}
+            onManageMembers={() => setShowMembers(true)}
           />
         </div>
 
@@ -523,14 +530,152 @@ export default function Board() {
           onClose={() => setShowNewWs(false)}
         />
       )}
+
+      {showMembers && currentWs && (
+        <MembersModal
+          workspace={currentWs}
+          myUserId={me?.id || ''}
+          onClose={() => setShowMembers(false)}
+        />
+      )}
     </div>
   );
 }
 
+// ── Members modal — beheer wie toegang heeft tot deze workspace ──
+function MembersModal({ workspace, myUserId, onClose }: { workspace: Workspace; myUserId: string; onClose: () => void }) {
+  interface Member { id: string; email: string; name: string; avatar_url: string; role: 'admin' | 'member'; joined_at: string; }
+  const [members, setMembers] = useState<Member[]>([]);
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'admin' | 'member'>('member');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    const res = await fetch(`/api/workspaces/${workspace.id}/members`);
+    const data = await res.json();
+    if (Array.isArray(data)) setMembers(data);
+  }, [workspace.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addMember = async () => {
+    if (!email.trim()) return;
+    setError(null); setLoading(true);
+    try {
+      const res = await fetch(`/api/workspaces/${workspace.id}/members`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.hint || data.error || 'Mislukt');
+      setEmail(''); await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeMember = async (userId: string) => {
+    if (!confirm('Lid verwijderen uit deze workspace?')) return;
+    await fetch(`/api/workspaces/${workspace.id}/members?user_id=${userId}`, { method: 'DELETE' });
+    await load();
+  };
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <h3 style={modalH()}>
+        Leden van {workspace.name}
+        <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-dim)', marginLeft: 8 }}>
+          ({workspace.key})
+        </span>
+      </h3>
+
+      <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 14 }}>
+        Voeg leden toe via hun email. Ze moeten eerst een account hebben gemaakt op de site.
+      </p>
+
+      {/* Toevoegen */}
+      <div style={{
+        display: 'flex', gap: 6, marginBottom: 14, padding: 10,
+        background: 'var(--bg-card)', borderRadius: 8, border: '1px solid var(--border)',
+      }}>
+        <input value={email} onChange={e => setEmail(e.target.value)}
+          placeholder="email@bedrijf.nl"
+          onKeyDown={e => { if (e.key === 'Enter') addMember(); }}
+          style={{ ...selectStyle(), flex: 1 }} />
+        <select value={role} onChange={e => setRole(e.target.value as any)} style={selectStyle()}>
+          <option value="member">Member</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button onClick={addMember} disabled={loading || !email.trim()} style={{
+          ...btnStyle('primary'), opacity: loading ? 0.5 : 1,
+        }}>
+          {loading ? '…' : '+ Toevoegen'}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{
+          padding: '8px 12px', borderRadius: 6, marginBottom: 12,
+          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+          color: '#FCA5A5', fontSize: 12,
+        }}>{error}</div>
+      )}
+
+      {/* Member-lijst */}
+      <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+        {members.length === 0 && <p style={{ fontSize: 12, color: 'var(--text-dim)' }}>Geen leden.</p>}
+        {members.map(m => {
+          const initials = m.name.split(' ').map(s => s[0]).join('').slice(0, 2).toUpperCase();
+          const isMe = m.id === myUserId;
+          return (
+            <div key={m.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px',
+              borderBottom: '1px solid var(--border)',
+            }}>
+              <span style={{
+                width: 28, height: 28, borderRadius: '50%',
+                background: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                color: 'white', fontWeight: 700, fontSize: 10, letterSpacing: '0.3px',
+              }}>{initials}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {m.name} {isMe && <span style={{ fontSize: 10, color: 'var(--text-dim)', fontWeight: 400 }}>(jij)</span>}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {m.email}
+                </div>
+              </div>
+              <span style={{
+                fontSize: 9, padding: '2px 8px', borderRadius: 4,
+                background: m.role === 'admin' ? 'var(--accent-glow)' : 'var(--bg-card)',
+                color: m.role === 'admin' ? 'var(--accent)' : 'var(--text-muted)',
+                fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase',
+              }}>{m.role}</span>
+              {!isMe && (
+                <button onClick={() => removeMember(m.id)} style={iconBtnStyle()} title="Verwijder">
+                  <Icon name="trash" size={12} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 14 }}>
+        <button onClick={onClose} style={btnStyle('outline')}>Sluit</button>
+      </div>
+    </ModalOverlay>
+  );
+}
+
 // ── Workspace switcher ──
-function WorkspaceSwitcher({ current, workspaces, onSwitch, onCreateNew }: {
+function WorkspaceSwitcher({ current, workspaces, onSwitch, onCreateNew, onManageMembers }: {
   current: Workspace | null; workspaces: Workspace[];
-  onSwitch: (id: string) => void; onCreateNew: () => void;
+  onSwitch: (id: string) => void; onCreateNew: () => void; onManageMembers?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -609,6 +754,16 @@ function WorkspaceSwitcher({ current, workspaces, onSwitch, onCreateNew }: {
             );
           })}
           <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 4 }}>
+            {current && onManageMembers && (
+              <button onClick={() => { setOpen(false); onManageMembers(); }} style={{
+                width: '100%', padding: '8px 8px', borderRadius: 6, border: 'none',
+                background: 'transparent', color: 'var(--text-muted)',
+                cursor: 'pointer', fontSize: 13, textAlign: 'left',
+                display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500,
+              }}>
+                <Icon name="user" size={12} /> Leden van {current.name}
+              </button>
+            )}
             <button onClick={() => { setOpen(false); onCreateNew(); }} style={{
               width: '100%', padding: '8px 8px', borderRadius: 6, border: 'none',
               background: 'transparent', color: 'var(--accent)',
@@ -755,13 +910,24 @@ function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
           <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>{me.name}</div>
             <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>{me.email}</div>
-            {me.role === 'admin' && (
-              <span style={{
-                display: 'inline-block', marginTop: 4, fontSize: 9,
-                padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: '0.3px',
-                background: 'var(--accent-glow)', color: 'var(--accent)', textTransform: 'uppercase',
-              }}>Admin</span>
-            )}
+            <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+              {me.role === 'admin' && (
+                <span style={{
+                  display: 'inline-block', fontSize: 9,
+                  padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: '0.3px',
+                  background: 'var(--accent-glow)', color: 'var(--accent)', textTransform: 'uppercase',
+                }}>Admin</span>
+              )}
+              {me.plan && me.plan !== 'free' && (
+                <span style={{
+                  display: 'inline-block', fontSize: 9,
+                  padding: '1px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: '0.3px',
+                  background: me.plan === 'pro' ? 'linear-gradient(135deg, #8B5CF6, #EC4899)' : 'rgba(251,191,36,0.15)',
+                  color: me.plan === 'pro' ? 'white' : '#FBBF24',
+                  textTransform: 'uppercase',
+                }}>{me.plan}</span>
+              )}
+            </div>
           </div>
           <Link href="/" style={menuItemStyle()}>← Landingspagina</Link>
           <button onClick={onLogout} style={{ ...menuItemStyle(), color: '#FCA5A5' }}>Uitloggen</button>

@@ -57,7 +57,11 @@ export async function getCurrentUser(): Promise<SafeUser | null> {
   if (!session.user_id) return null;
   const u = await getUserById(session.user_id);
   if (!u) return null;
-  return { id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, role: u.role };
+  return {
+    id: u.id, email: u.email, name: u.name,
+    avatar_url: u.avatar_url, role: u.role,
+    plan: u.plan || 'free', plan_until: u.plan_until || null,
+  };
 }
 
 /** Huidige active workspace voor deze session. Valt terug op eerste workspace van user. */
@@ -108,7 +112,7 @@ export async function requireAuth(req?: NextRequest): Promise<{ user: SafeUser; 
           if (found) ws = found;
         }
         return {
-          user: { id: 'system', email: 'system@p4a', name: 'system', avatar_url: '', role: 'admin' },
+          user: { id: 'system', email: 'system@p4a', name: 'system', avatar_url: '', role: 'admin', plan: 'pro', plan_until: null },
           workspace: ws,
         };
       }

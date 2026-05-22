@@ -29,6 +29,8 @@ export type ActivityType =
   | 'linked_issue_added'
   | 'parent_changed';
 
+export type Plan = 'free' | 'plus' | 'pro';
+
 export interface User {
   id: string;
   email: string;
@@ -36,12 +38,16 @@ export interface User {
   password_hash: string;
   avatar_url: string;
   role: 'admin' | 'member';
+  plan: Plan;
+  plan_until: string | null;  // null = lifelong
   created_at: string;
 }
 
 export interface SafeUser {
   id: string; email: string; name: string;
   avatar_url: string; role: 'admin' | 'member';
+  plan: Plan;
+  plan_until: string | null;
 }
 
 export interface Project {

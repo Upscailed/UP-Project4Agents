@@ -54,7 +54,7 @@ export async function logActivityPublic(type: ActivityType, payload: Record<stri
 // ── Users ──
 
 export async function listUsers(): Promise<SafeUser[]> {
-  const rows = await sql`SELECT id, email, name, avatar_url, role FROM users ORDER BY created_at ASC`;
+  const rows = await sql`SELECT id, email, name, avatar_url, role, plan, plan_until FROM users ORDER BY created_at ASC`;
   return rows as any;
 }
 
@@ -83,7 +83,7 @@ export async function createUser(input: { email: string; name: string; password_
     INSERT INTO workspace_members (workspace_id, user_id, role)
     VALUES (${defaultWs.id}, ${id}, ${role === 'admin' ? 'admin' : 'member'})
   `;
-  const rows = await sql`SELECT id, email, name, avatar_url, role FROM users WHERE id = ${id}`;
+  const rows = await sql`SELECT id, email, name, avatar_url, role, plan, plan_until FROM users WHERE id = ${id}`;
   return rows[0] as any;
 }
 
@@ -108,13 +108,13 @@ export async function linkGithubId(userId: string, githubId: number, avatarUrl?:
 export async function findOrCreateGithubUser(input: { github_id: number; email: string; name: string; avatar_url?: string }): Promise<SafeUser> {
   // 1. via github_id
   const byGh = await getUserByGithubId(input.github_id);
-  if (byGh) return { id: byGh.id, email: byGh.email, name: byGh.name, avatar_url: byGh.avatar_url, role: byGh.role };
+  if (byGh) return { id: byGh.id, email: byGh.email, name: byGh.name, avatar_url: byGh.avatar_url, role: byGh.role, plan: byGh.plan, plan_until: byGh.plan_until };
 
   // 2. via email
   const byEmail = await getUserByEmail(input.email);
   if (byEmail) {
     await linkGithubId(byEmail.id, input.github_id, input.avatar_url);
-    return { id: byEmail.id, email: byEmail.email, name: byEmail.name, avatar_url: input.avatar_url || byEmail.avatar_url, role: byEmail.role };
+    return { id: byEmail.id, email: byEmail.email, name: byEmail.name, avatar_url: input.avatar_url || byEmail.avatar_url, role: byEmail.role, plan: byEmail.plan, plan_until: byEmail.plan_until };
   }
 
   // 3. nieuwe user (geen wachtwoord, alleen OAuth-flow)
@@ -130,7 +130,7 @@ export async function findOrCreateGithubUser(input: { github_id: number; email: 
     INSERT INTO workspace_members (workspace_id, user_id, role)
     VALUES (${defaultWs.id}, ${id}, ${role === 'admin' ? 'admin' : 'member'})
   `;
-  const rows = await sql`SELECT id, email, name, avatar_url, role FROM users WHERE id = ${id}`;
+  const rows = await sql`SELECT id, email, name, avatar_url, role, plan, plan_until FROM users WHERE id = ${id}`;
   return rows[0] as any;
 }
 
