@@ -134,6 +134,49 @@ export async function findOrCreateGithubUser(input: { github_id: number; email: 
   return rows[0] as any;
 }
 
+// ── API Tokens ──
+
+export async function listApiTokensForUser(userId: string): Promise<import('./types').ApiToken[]> {
+  const rows = await sql`
+    SELECT id, user_id, prefix, name, created_at, last_used_at, revoked_at
+    FROM api_tokens
+    WHERE user_id = ${userId} AND revoked_at IS NULL
+    ORDER BY created_at DESC
+  `;
+  return rows.map(r => rowToTs(r, ['created_at', 'last_used_at', 'revoked_at'])) as any;
+}
+
+export async function createApiToken(input: { user_id: string; name: string; token_hash: string; prefix: string }): Promise<import('./types').ApiToken> {
+  const id = uuidv4();
+  await sql`
+    INSERT INTO api_tokens (id, user_id, name, token_hash, prefix)
+    VALUES (${id}, ${input.user_id}, ${input.name}, ${input.token_hash}, ${input.prefix})
+  `;
+  const rows = await sql`SELECT id, user_id, prefix, name, created_at, last_used_at, revoked_at FROM api_tokens WHERE id = ${id}`;
+  return rowToTs(rows[0], ['created_at', 'last_used_at', 'revoked_at']) as any;
+}
+
+export async function revokeApiToken(tokenId: string, userId: string): Promise<boolean> {
+  const rows = await sql`
+    UPDATE api_tokens SET revoked_at = NOW()
+    WHERE id = ${tokenId} AND user_id = ${userId} AND revoked_at IS NULL
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
+/** Token-lookup voor auth. Geeft user_id + token_id terug. */
+export async function findUserByApiToken(tokenHash: string): Promise<{ user_id: string; token_id: string } | null> {
+  const rows = await sql`
+    SELECT id, user_id FROM api_tokens WHERE token_hash = ${tokenHash} AND revoked_at IS NULL
+  `;
+  if (!rows.length) return null;
+  const row = rows[0] as any;
+  // last_used_at bijwerken (fire-and-forget, geen await)
+  sql`UPDATE api_tokens SET last_used_at = NOW() WHERE id = ${row.id}`.then(() => {}).catch(() => {});
+  return { user_id: row.user_id, token_id: row.id };
+}
+
 // ── Teams / Workspaces ──
 
 export async function listTeams(): Promise<Team[]> {

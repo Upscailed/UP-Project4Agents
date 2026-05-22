@@ -145,6 +145,16 @@ export interface Activity {
   created_at: string;
 }
 
+export interface ApiToken {
+  id: string;
+  user_id: string;
+  prefix: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
 export interface View {
   id: string;
   name: string;

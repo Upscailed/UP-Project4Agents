@@ -143,6 +143,20 @@ CREATE TABLE IF NOT EXISTS counters (
   value INTEGER DEFAULT 0
 );
 
+-- Per-user API tokens (voor MCP / CLI / cron toegang)
+CREATE TABLE IF NOT EXISTS api_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,           -- eerste paar tekens, voor visuele herkenning
+  name TEXT DEFAULT 'default',    -- label van de user (bv. 'Claude Desktop')
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_hash ON api_tokens(token_hash);
+
 -- ─────────────────────────────────────────────────────────────────────────
 -- Seed: default workspace + standaard views
 -- (alleen als nog niks bestaat — idempotent)

@@ -930,6 +930,9 @@ function UserMenu({ me, onLogout }: { me: Me; onLogout: () => void }) {
               )}
             </div>
           </div>
+          <Link href="/settings" style={{ ...menuItemStyle(), display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Icon name="estimate" size={12} /> Settings · MCP-connectie
+          </Link>
           <Link href="/" style={menuItemStyle()}>← Landingspagina</Link>
           <button onClick={onLogout} style={{ ...menuItemStyle(), color: '#FCA5A5' }}>Uitloggen</button>
         </div>

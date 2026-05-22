@@ -2,7 +2,8 @@ import { cookies } from 'next/headers';
 import { NextResponse, NextRequest } from 'next/server';
 import { getIronSession, SessionOptions } from 'iron-session';
 import { randomBytes } from 'node:crypto';
-import { getUserById, listWorkspacesForUser, getTeam, isWorkspaceMember, getDefaultTeam } from './db';
+import { createHash } from 'node:crypto';
+import { getUserById, listWorkspacesForUser, getTeam, isWorkspaceMember, getDefaultTeam, findUserByApiToken } from './db';
 import type { SafeUser, Workspace } from './types';
 
 export interface SessionData {
@@ -95,15 +96,21 @@ export async function switchWorkspace(userId: string, workspaceId: string): Prom
  * Accepteert: (1) cookie-session, (2) `Authorization: Bearer <P4A_API_TOKEN>` header (voor MCP-server / CLI / cron).
  * Geeft ook de current workspace mee voor automatische filtering.
  */
+/** SHA-256 hash van een token-string (voor opslag/vergelijking). */
+export function hashApiToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
 export async function requireAuth(req?: NextRequest): Promise<{ user: SafeUser; workspace: Workspace | null } | NextResponse> {
   // Bearer-token route (voor MCP en server-to-server)
   if (req) {
     const authHeader = req.headers.get('authorization') || '';
     if (authHeader.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
+
+      // 1) Globale env-token (legacy / system-wide)
       const expected = process.env.P4A_API_TOKEN;
       if (expected && token === expected) {
-        // System user → krijgt default workspace
         let ws: Workspace | null = null;
         try { ws = await getDefaultTeam(); } catch {}
         const wsHeader = req.headers.get('x-p4a-workspace');
@@ -115,6 +122,28 @@ export async function requireAuth(req?: NextRequest): Promise<{ user: SafeUser; 
           user: { id: 'system', email: 'system@p4a', name: 'system', avatar_url: '', role: 'admin', plan: 'pro', plan_until: null },
           workspace: ws,
         };
+      }
+
+      // 2) Per-user token uit api_tokens tabel
+      const hash = hashApiToken(token);
+      const match = await findUserByApiToken(hash);
+      if (match) {
+        const u = await getUserById(match.user_id);
+        if (u) {
+          const wsHeader = req.headers.get('x-p4a-workspace');
+          let ws: Workspace | null = null;
+          if (wsHeader) {
+            ws = (await getTeam(wsHeader)) || null;
+          }
+          if (!ws) {
+            const wsList = await listWorkspacesForUser(u.id);
+            ws = wsList[0] || null;
+          }
+          return {
+            user: { id: u.id, email: u.email, name: u.name, avatar_url: u.avatar_url, role: u.role, plan: u.plan || 'free', plan_until: u.plan_until || null },
+            workspace: ws,
+          };
+        }
       }
     }
   }
