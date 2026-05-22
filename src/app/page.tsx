@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Icon, IconName } from '@/components/Icon';
 
 // ── Types ──
 type IssueStatus = 'triage' | 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
@@ -8,7 +9,6 @@ type IssuePriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicates' | 'duplicate_of';
 
 interface Project { id: string; name: string; description: string; color: string; team_id: string | null; }
-interface Team { id: string; key: string; name: string; }
 interface Issue {
   id: string; identifier: string; project_id: string; team_id: string | null;
   title: string; description: string;
@@ -29,21 +29,21 @@ interface IssueLinkRow {
 interface Activity { id: string; issue_id: string | null; project_id: string | null; actor: string; type: string; payload: any; created_at: string; }
 interface View { id: string; name: string; description: string; filter: any; icon: string; sort_order: number; }
 
-const COLUMNS: { status: IssueStatus; label: string; color: string; icon: string }[] = [
-  { status: 'triage',      label: 'Triage',      color: '#EC4899', icon: '⊙' },
-  { status: 'backlog',     label: 'Backlog',     color: '#6B7280', icon: '○' },
-  { status: 'todo',        label: 'Todo',        color: '#94A3B8', icon: '◔' },
-  { status: 'in_progress', label: 'In Progress', color: '#F59E0B', icon: '◑' },
-  { status: 'in_review',   label: 'In Review',   color: '#A78BFA', icon: '◕' },
-  { status: 'done',        label: 'Done',        color: '#10B981', icon: '●' },
+const COLUMNS: { status: IssueStatus; label: string; color: string; icon: IconName }[] = [
+  { status: 'triage',      label: 'Triage',      color: '#EC4899', icon: 'status_triage' },
+  { status: 'backlog',     label: 'Backlog',     color: '#6B7280', icon: 'status_backlog' },
+  { status: 'todo',        label: 'Todo',        color: '#94A3B8', icon: 'status_todo' },
+  { status: 'in_progress', label: 'In Progress', color: '#F59E0B', icon: 'status_in_progress' },
+  { status: 'in_review',   label: 'In Review',   color: '#A78BFA', icon: 'status_in_review' },
+  { status: 'done',        label: 'Done',        color: '#10B981', icon: 'status_done' },
 ];
 
-const PRIORITIES: Record<IssuePriority, { label: string; icon: string; color: string }> = {
-  urgent: { label: 'Urgent', icon: '⚡', color: '#EF4444' },
-  high:   { label: 'Hoog',   icon: '↑',  color: '#FB923C' },
-  medium: { label: 'Medium', icon: '→',  color: '#FBBF24' },
-  low:    { label: 'Laag',   icon: '↓',  color: '#60A5FA' },
-  none:   { label: 'Geen',   icon: '—',  color: '#6B7280' },
+const PRIORITIES: Record<IssuePriority, { label: string; icon: IconName; color: string }> = {
+  urgent: { label: 'Urgent', icon: 'priority_urgent', color: '#EF4444' },
+  high:   { label: 'Hoog',   icon: 'priority_high',   color: '#FB923C' },
+  medium: { label: 'Medium', icon: 'priority_medium', color: '#FBBF24' },
+  low:    { label: 'Laag',   icon: 'priority_low',    color: '#60A5FA' },
+  none:   { label: 'Geen',   icon: 'priority_none',   color: '#6B7280' },
 };
 
 const LINK_LABELS: Record<LinkType, string> = {
@@ -55,6 +55,20 @@ const LINK_LABELS: Record<LinkType, string> = {
 };
 
 const PROJECT_COLORS = ['#8B5CF6','#10B981','#F59E0B','#60A5FA','#FB923C','#EF4444','#EC4899','#14B8A6','#F472B6','#A78BFA'];
+
+// Map oude emoji-icoonstrings naar nieuwe Icon-namen (voor saved views in DB).
+const VIEW_ICON_MAP: Record<string, IconName> = {
+  '◑': 'status_in_progress',
+  '🤖': 'agent',
+  '↑': 'priority_high',
+  '⊙': 'status_triage',
+  '●': 'status_done',
+  '⊟': 'views',
+};
+function viewIcon(s: string): IconName {
+  if (s && s.startsWith('status_') || s?.startsWith('priority_') || s in {agent:1,user:1,views:1,projects:1}) return s as IconName;
+  return VIEW_ICON_MAP[s] || 'views';
+}
 
 const api = {
   get: <T,>(url: string): Promise<T> => fetch(url).then(r => r.json()),
@@ -152,21 +166,26 @@ export default function Board() {
             <div style={{
               width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #8B5CF6, #EC4899)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 14,
+              letterSpacing: '-0.5px',
             }}>UP</div>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>Project4Agents</div>
+              <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.2px' }}>Project4Agents</div>
               <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>AI Project Management</div>
             </div>
           </div>
         </div>
 
         {/* Search */}
-        <div style={{ padding: '12px 12px 8px' }}>
+        <div style={{ padding: '12px 12px 8px', position: 'relative' }}>
+          <span style={{
+            position: 'absolute', left: 22, top: 19, color: 'var(--text-dim)',
+            pointerEvents: 'none', display: 'flex',
+          }}><Icon name="search" size={13} /></span>
           <input
             type="text" placeholder="Zoek issues..."
             value={search} onChange={e => setSearch(e.target.value)}
             style={{
-              width: '100%', padding: '8px 12px', borderRadius: 8,
+              width: '100%', padding: '8px 12px 8px 30px', borderRadius: 6,
               border: '1px solid var(--border)', background: 'var(--bg-card)',
               color: 'var(--text)', fontSize: 13, outline: 'none',
             }}
@@ -174,26 +193,31 @@ export default function Board() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', padding: '0 8px', gap: 4, borderBottom: '1px solid var(--border)' }}>
-          {(['board', 'cycles', 'activity'] as Tab[]).map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{
-              flex: 1, padding: '6px 8px', borderRadius: 0,
-              border: 'none', borderBottom: tab === t ? '2px solid var(--accent)' : '2px solid transparent',
-              background: 'transparent', color: tab === t ? 'var(--text)' : 'var(--text-dim)',
-              fontSize: 11, fontWeight: 600, textTransform: 'uppercase', cursor: 'pointer',
-            }}>{t === 'board' ? '🎯 Board' : t === 'cycles' ? '🔄 Cycles' : '📜 Activity'}</button>
+        <div style={{ display: 'flex', padding: '0 8px', gap: 0, borderBottom: '1px solid var(--border)' }}>
+          {([
+            { id: 'board', icon: 'board' as IconName, label: 'Board' },
+            { id: 'cycles', icon: 'cycles' as IconName, label: 'Cycles' },
+            { id: 'activity', icon: 'activity' as IconName, label: 'Activity' },
+          ]).map(t => (
+            <button key={t.id} onClick={() => setTab(t.id as Tab)} style={{
+              flex: 1, padding: '8px 8px',
+              border: 'none', borderBottom: tab === t.id ? '2px solid var(--accent)' : '2px solid transparent',
+              background: 'transparent', color: tab === t.id ? 'var(--text)' : 'var(--text-dim)',
+              fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px',
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}><Icon name={t.icon} size={12} /> {t.label}</button>
           ))}
         </div>
 
         <div style={{ padding: '4px 8px', flex: 1, overflowY: 'auto' }}>
           {/* Views */}
-          <SidebarSection title="Views" action={undefined}>
+          <SidebarSection title="Views">
             {views.map(v => (
               <SidebarItem key={v.id}
                 active={selectedView === v.id}
                 onClick={() => { setSelectedView(selectedView === v.id ? null : v.id); setSelectedProject(null); }}
                 color="var(--text-muted)"
-                left={<span style={{ fontSize: 11 }}>{v.icon}</span>}
+                left={<Icon name={viewIcon(v.icon)} size={13} />}
                 label={v.name}
               />
             ))}
@@ -201,15 +225,15 @@ export default function Board() {
 
           {/* Projects */}
           <SidebarSection title="Projecten" action={
-            <button onClick={() => setShowNewProject(true)} style={{
-              background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1,
-            }}>+</button>
+            <button onClick={() => setShowNewProject(true)} style={iconBtnStyle()}>
+              <Icon name="plus" size={13} />
+            </button>
           }>
             <SidebarItem
               active={!selectedProject && !selectedView}
               onClick={() => { setSelectedProject(null); setSelectedView(null); }}
               color="var(--text-muted)"
-              left={<span style={{ fontSize: 11 }}>⊟</span>}
+              left={<Icon name="projects" size={13} />}
               label="Alle issues"
               right={String(issues.length)}
             />
@@ -229,14 +253,18 @@ export default function Board() {
 
           {/* Active cycle */}
           {activeCycle && (
-            <SidebarSection title="Active cycle" action={undefined}>
+            <SidebarSection title="Active cycle">
               <div style={{
                 padding: 10, borderRadius: 6, background: 'var(--bg-card)',
                 border: '1px solid var(--border)', fontSize: 12,
+                display: 'flex', alignItems: 'center', gap: 8,
               }}>
-                <div style={{ fontWeight: 600 }}>{activeCycle.name}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>
-                  {fmtDate(activeCycle.starts_at)} → {fmtDate(activeCycle.ends_at)}
+                <Icon name="cycles" size={14} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600 }}>{activeCycle.name}</div>
+                  <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>
+                    {fmtDate(activeCycle.starts_at)} → {fmtDate(activeCycle.ends_at)}
+                  </div>
                 </div>
               </div>
             </SidebarSection>
@@ -245,15 +273,9 @@ export default function Board() {
 
         {/* Stats */}
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-dim)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span>Totaal</span><span style={{ color: 'var(--text-muted)' }}>{issues.length}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span>In progress</span><span style={{ color: '#F59E0B' }}>{issues.filter(i=>i.status==='in_progress').length}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Done</span><span style={{ color: '#10B981' }}>{issues.filter(i=>i.status==='done').length}</span>
-          </div>
+          <StatLine label="Totaal" value={issues.length} />
+          <StatLine label="In progress" value={issues.filter(i=>i.status==='in_progress').length} color="#F59E0B" />
+          <StatLine label="Done"        value={issues.filter(i=>i.status==='done').length}        color="#10B981" />
         </div>
       </aside>
 
@@ -263,14 +285,14 @@ export default function Board() {
           padding: '16px 24px', borderBottom: '1px solid var(--border)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <h1 style={{ fontSize: 18, fontWeight: 700 }}>
+          <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.2px' }}>
             {selectedView ? views.find(v=>v.id===selectedView)?.name :
              selectedProject ? projects.find(p => p.id === selectedProject)?.name :
              tab === 'cycles' ? 'Cycles' : tab === 'activity' ? 'Activity log' : 'Alle issues'}
           </h1>
           <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
             API: <code style={{ color: 'var(--accent)', background: 'var(--accent-glow)', padding: '2px 6px', borderRadius: 4 }}>
-              http://localhost:3400/api
+              localhost:3400/api
             </code>
           </div>
         </header>
@@ -293,16 +315,15 @@ export default function Board() {
                     display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px 12px',
                     borderBottom: `2px solid ${col.color}22`,
                   }}>
-                    <span style={{ color: col.color, fontSize: 14 }}>{col.icon}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>{col.label}</span>
+                    <span style={{ color: col.color, display: 'inline-flex' }}><Icon name={col.icon} size={14} /></span>
+                    <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.1px' }}>{col.label}</span>
                     <span style={{
                       fontSize: 11, color: 'var(--text-dim)', background: 'var(--bg-card)',
                       padding: '1px 6px', borderRadius: 10,
                     }}>{colIssues.length}</span>
-                    <button onClick={() => setShowNewIssue(col.status)} style={{
-                      marginLeft: 'auto', background: 'none', border: 'none',
-                      color: 'var(--text-dim)', cursor: 'pointer', fontSize: 18, lineHeight: 1,
-                    }}>+</button>
+                    <button onClick={() => setShowNewIssue(col.status)} style={iconBtnStyle()}>
+                      <Icon name="plus" size={13} />
+                    </button>
                   </div>
 
                   <div style={{ flex: 1, overflowY: 'auto', paddingTop: 8 }}>
@@ -322,33 +343,38 @@ export default function Board() {
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                            <span style={{ color: pri.color, fontSize: 12, fontWeight: 600 }}>{pri.icon}</span>
+                            <span style={{ color: pri.color, display: 'inline-flex' }}><Icon name={pri.icon} size={12} /></span>
                             <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'monospace' }}>{issue.identifier}</span>
-                            {issue.github_pr_url && <span title="Heeft PR" style={{ marginLeft: 'auto', fontSize: 10 }}>🔗</span>}
-                            {issue.estimate != null && (
-                              <span style={{ marginLeft: issue.github_pr_url ? 4 : 'auto', fontSize: 10, color: 'var(--text-dim)' }}>
-                                {issue.estimate}
-                              </span>
-                            )}
+                            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {issue.github_pr_url && <span title={`PR #${issue.github_pr_number}`} style={{ color: 'var(--text-dim)', display: 'inline-flex' }}><Icon name="pr" size={11} /></span>}
+                              {issue.estimate != null && (
+                                <span style={{ fontSize: 10, color: 'var(--text-dim)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                  <Icon name="estimate" size={10} /> {issue.estimate}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.4, marginBottom: 8 }}>{issue.title}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                             {proj && (
                               <span style={{
                                 fontSize: 10, color: proj.color, background: `${proj.color}15`,
-                                padding: '1px 6px', borderRadius: 4,
+                                padding: '2px 6px', borderRadius: 4, fontWeight: 500,
                               }}>{proj.name}</span>
                             )}
                             {issue.assignee && (
                               <span style={{
                                 fontSize: 10, color: 'var(--accent)', background: 'var(--accent-glow)',
-                                padding: '1px 6px', borderRadius: 4,
-                              }}>👤 {issue.assignee}</span>
+                                padding: '2px 6px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 3, fontWeight: 500,
+                              }}>
+                                <Icon name={assigneeIcon(issue.assignee)} size={9} />
+                                {issue.assignee}
+                              </span>
                             )}
                             {labels.slice(0, 3).map((l, i) => (
                               <span key={i} style={{
                                 fontSize: 10, color: 'var(--text-muted)', background: 'var(--bg)',
-                                padding: '1px 6px', borderRadius: 4,
+                                padding: '2px 6px', borderRadius: 4,
                               }}>{l}</span>
                             ))}
                           </div>
@@ -373,7 +399,7 @@ export default function Board() {
         )}
 
         {tab === 'cycles' && (
-          <CyclesView cycles={cycles} issues={issues} onCreate={() => setShowNewCycle(true)} onChanged={loadCycles} />
+          <CyclesView cycles={cycles} issues={issues} onCreate={() => setShowNewCycle(true)} />
         )}
 
         {tab === 'activity' && (
@@ -384,7 +410,6 @@ export default function Board() {
       {selectedIssue && (
         <IssueDetail
           issue={selectedIssue}
-          project={projects.find(p => p.id === selectedIssue.project_id)}
           projects={projects}
           cycles={cycles}
           comments={comments}
@@ -439,12 +464,13 @@ export default function Board() {
 }
 
 // ── Sidebar helpers ──
-function SidebarSection({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+function SidebarSection({ title, action, children }: { title: string; action?: React.ReactNode; children?: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 8 }}>
       <div style={{
-        fontSize: 11, fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase',
-        letterSpacing: '0.5px', padding: '10px 8px 4px', display: 'flex', justifyContent: 'space-between',
+        fontSize: 10, fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase',
+        letterSpacing: '0.7px', padding: '10px 8px 4px', display: 'flex', justifyContent: 'space-between',
+        alignItems: 'center',
       }}>
         <span>{title}</span>
         {action}
@@ -466,10 +492,18 @@ function SidebarItem({ active, onClick, color, left, label, right }: {
       cursor: 'pointer', fontSize: 13, fontWeight: 500, marginBottom: 1,
       display: 'flex', alignItems: 'center', gap: 8,
     }}>
-      {left}
-      <span style={{ flex: 1 }}>{label}</span>
+      <span style={{ display: 'inline-flex', width: 14, justifyContent: 'center' }}>{left}</span>
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
       {right && <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>{right}</span>}
     </button>
+  );
+}
+
+function StatLine({ label, value, color }: { label: string; value: number; color?: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+      <span>{label}</span><span style={{ color: color || 'var(--text-muted)' }}>{value}</span>
+    </div>
   );
 }
 
@@ -507,7 +541,7 @@ function NewIssueInline({ status, projects, selectedProject, onCreated, onCancel
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         <select value={priority} onChange={e => setPriority(e.target.value as IssuePriority)} style={inputStyle()}>
-          {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+          {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
@@ -519,8 +553,8 @@ function NewIssueInline({ status, projects, selectedProject, onCreated, onCancel
 }
 
 // ── Issue detail panel ──
-function IssueDetail({ issue, project, projects, cycles, comments, links, allIssues, onUpdate, onAddComment, onAddLink, onClaim, onBranchName, onDelete, onClose }: {
-  issue: Issue; project?: Project; projects: Project[]; cycles: Cycle[];
+function IssueDetail({ issue, projects, cycles, comments, links, allIssues, onUpdate, onAddComment, onAddLink, onClaim, onBranchName, onDelete, onClose }: {
+  issue: Issue; projects: Project[]; cycles: Cycle[];
   comments: Comment[]; links: IssueLinkRow[]; allIssues: Issue[];
   onUpdate: (field: string, value: any) => void;
   onAddComment: (body: string) => void;
@@ -550,6 +584,8 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
     setAssignee(issue.assignee);
   }, [issue]);
 
+  const statusCfg = COLUMNS.find(c => c.status === issue.status);
+
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--bg-overlay)', zIndex: 100 }} />
@@ -562,12 +598,17 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
           padding: '14px 18px', borderBottom: '1px solid var(--border)',
           display: 'flex', alignItems: 'center', gap: 10,
         }}>
-          <span style={{ fontSize: 12, color: 'var(--text-dim)', fontFamily: 'monospace' }}>{issue.identifier}</span>
-          <button onClick={onClaim ? () => setShowClaim(true) : undefined} style={btnStyle('outline-sm')}>Claim</button>
-          <button onClick={onBranchName} style={btnStyle('outline-sm')}>Branch-naam</button>
+          {statusCfg && <span style={{ color: statusCfg.color, display: 'inline-flex' }}><Icon name={statusCfg.icon} size={14} /></span>}
+          <span style={{ fontSize: 12, color: 'var(--text-dim)', fontFamily: 'monospace', fontWeight: 600 }}>{issue.identifier}</span>
+          <button onClick={() => setShowClaim(true)} style={btnStyle('outline-sm')}>
+            <Icon name="check" size={11} /> <span style={{ marginLeft: 4 }}>Claim</span>
+          </button>
+          <button onClick={onBranchName} style={btnStyle('outline-sm')}>
+            <Icon name="branch" size={11} /> <span style={{ marginLeft: 4 }}>Branch-naam</span>
+          </button>
           <div style={{ flex: 1 }} />
-          <button onClick={() => setShowDelete(true)} style={iconBtnStyle()}>🗑</button>
-          <button onClick={onClose} style={iconBtnStyle()}>×</button>
+          <button onClick={() => setShowDelete(true)} style={iconBtnStyle()}><Icon name="trash" size={14} /></button>
+          <button onClick={onClose} style={iconBtnStyle()}><Icon name="close" size={14} /></button>
         </div>
 
         <div style={{ padding: 20, flex: 1 }}>
@@ -585,7 +626,7 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
             />
           ) : (
             <h2 onClick={() => setEditTitle(true)} style={{
-              fontSize: 18, fontWeight: 700, marginBottom: 16, cursor: 'pointer',
+              fontSize: 18, fontWeight: 700, marginBottom: 16, cursor: 'pointer', letterSpacing: '-0.2px',
             }}>{issue.title}</h2>
           )}
 
@@ -593,13 +634,13 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
             <Field label="Status">
               <select value={issue.status} onChange={e => onUpdate('status', e.target.value)} style={selectStyle()}>
-                {COLUMNS.map(c => <option key={c.status} value={c.status}>{c.icon} {c.label}</option>)}
-                <option value="cancelled">✕ Cancelled</option>
+                {COLUMNS.map(c => <option key={c.status} value={c.status}>{c.label}</option>)}
+                <option value="cancelled">Cancelled</option>
               </select>
             </Field>
             <Field label="Prioriteit">
               <select value={issue.priority} onChange={e => onUpdate('priority', e.target.value)} style={selectStyle()}>
-                {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.label}</option>)}
+                {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
             </Field>
             <Field label="Project">
@@ -620,10 +661,10 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
                 {cycles.map(c => <option key={c.id} value={c.id}>{c.name} {c.status === 'active' ? '(actief)' : ''}</option>)}
               </select>
             </Field>
-            <Field label="Estimate (sp)">
+            <Field label="Estimate">
               <input type="number" value={issue.estimate ?? ''}
                 onChange={e => onUpdate('estimate', e.target.value === '' ? null : Number(e.target.value))}
-                style={selectStyle()} placeholder="—"
+                style={selectStyle()} placeholder="story points"
               />
             </Field>
             <Field label="Due date">
@@ -661,25 +702,24 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
           {/* Sub-issues */}
           {issue.sub_issues && issue.sub_issues.length > 0 && (
             <Field label={`Sub-issues (${issue.sub_issues.length})`} block>
-              {issue.sub_issues.map(s => (
-                <div key={s.id} style={{
-                  padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 6,
-                  border: '1px solid var(--border)', marginBottom: 4, display: 'flex',
-                  alignItems: 'center', gap: 8, fontSize: 12,
-                }}>
-                  <span style={{ color: COLUMNS.find(c => c.status === s.status)?.color }}>
-                    {COLUMNS.find(c => c.status === s.status)?.icon}
-                  </span>
-                  <span style={{ fontFamily: 'monospace', color: 'var(--text-dim)', fontSize: 11 }}>{s.identifier}</span>
-                  <span>{s.title}</span>
-                </div>
-              ))}
+              {issue.sub_issues.map(s => {
+                const sCfg = COLUMNS.find(c => c.status === s.status);
+                return (
+                  <div key={s.id} style={rowStyle()}>
+                    {sCfg && <span style={{ color: sCfg.color, display: 'inline-flex' }}><Icon name={sCfg.icon} size={12} /></span>}
+                    <span style={monospaceStyle()}>{s.identifier}</span>
+                    <span>{s.title}</span>
+                  </div>
+                );
+              })}
             </Field>
           )}
 
           {/* Links */}
           <Field label={`Gekoppelde issues (${links.length})`} block action={
-            <button onClick={() => setShowAddLink(!showAddLink)} style={btnStyle('outline-sm')}>+ Link</button>
+            <button onClick={() => setShowAddLink(!showAddLink)} style={btnStyle('outline-sm')}>
+              <Icon name="link" size={11} /> <span style={{ marginLeft: 4 }}>Link</span>
+            </button>
           }>
             {showAddLink && (
               <div style={{ display: 'flex', gap: 6, marginBottom: 8, padding: 8, background: 'var(--bg-card)', borderRadius: 6 }}>
@@ -698,35 +738,37 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
                   style={btnStyle('primary')}>OK</button>
               </div>
             )}
-            {links.filter(l => l.from_issue_id === issue.id).map(l => (
-              <div key={l.id} style={{
-                padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 6,
-                border: '1px solid var(--border)', marginBottom: 4, display: 'flex',
-                alignItems: 'center', gap: 8, fontSize: 12,
-              }}>
-                <span style={{ color: 'var(--text-dim)' }}>{LINK_LABELS[l.link_type]}</span>
-                <span style={{ fontFamily: 'monospace', color: 'var(--text-dim)' }}>{l.to?.identifier}</span>
-                <span>{l.to?.title}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: COLUMNS.find(c => c.status === l.to?.status)?.color }}>
-                  {l.to?.status}
-                </span>
-              </div>
-            ))}
+            {links.filter(l => l.from_issue_id === issue.id).map(l => {
+              const tCfg = COLUMNS.find(c => c.status === l.to?.status);
+              return (
+                <div key={l.id} style={rowStyle()}>
+                  <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>{LINK_LABELS[l.link_type]}</span>
+                  {tCfg && <span style={{ color: tCfg.color, display: 'inline-flex' }}><Icon name={tCfg.icon} size={11} /></span>}
+                  <span style={monospaceStyle()}>{l.to?.identifier}</span>
+                  <span>{l.to?.title}</span>
+                </div>
+              );
+            })}
           </Field>
 
           {/* GitHub */}
           <Field label="GitHub" block>
-            <input value={branch}
-              onChange={e => setBranch(e.target.value)}
-              onBlur={() => onUpdate('github_branch', branch)}
-              placeholder="iwan/up-42-titel-slug"
-              style={{ ...selectStyle(), fontFamily: 'monospace', width: '100%' }}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Icon name="branch" size={13} style={{ color: 'var(--text-dim)' }} />
+              <input value={branch}
+                onChange={e => setBranch(e.target.value)}
+                onBlur={() => onUpdate('github_branch', branch)}
+                placeholder="iwan/up-42-titel-slug"
+                style={{ ...selectStyle(), fontFamily: 'monospace', flex: 1 }}
+              />
+            </div>
             {issue.github_pr_url && (
               <a href={issue.github_pr_url} target="_blank" rel="noreferrer" style={{
-                display: 'inline-block', marginTop: 6, fontSize: 12, color: 'var(--accent)',
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                marginTop: 8, fontSize: 12, color: 'var(--accent)', textDecoration: 'none',
               }}>
-                → PR #{issue.github_pr_number} bekijken
+                <Icon name="pr" size={12} /> PR #{issue.github_pr_number} bekijken
+                <Icon name="arrow_right" size={11} />
               </a>
             )}
           </Field>
@@ -739,8 +781,11 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
                 marginBottom: 4, borderLeft: `3px solid ${commentColor(c.author)}`,
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: commentColor(c.author) }}>
-                    {commentIcon(c.author)} {c.author}
+                  <span style={{
+                    fontSize: 11, fontWeight: 600, color: commentColor(c.author),
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                  }}>
+                    <Icon name={authorIcon(c.author)} size={11} /> {c.author}
                   </span>
                   <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>
                     {new Date(c.created_at).toLocaleString('nl-NL')}
@@ -769,7 +814,7 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
 
         {showClaim && (
           <ModalOverlay onClose={() => setShowClaim(false)}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Claim issue</h3>
+            <h3 style={modalH()}>Claim issue</h3>
             <input value={claimAs} onChange={e => setClaimAs(e.target.value)} placeholder="agent / iwan / ..." autoFocus
               style={{ ...selectStyle(), width: '100%', marginBottom: 10 }} />
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -794,14 +839,16 @@ function IssueDetail({ issue, project, projects, cycles, comments, links, allIss
 }
 
 // ── Cycles view ──
-function CyclesView({ cycles, issues, onCreate, onChanged }: {
-  cycles: Cycle[]; issues: Issue[]; onCreate: () => void; onChanged: () => void;
+function CyclesView({ cycles, issues, onCreate }: {
+  cycles: Cycle[]; issues: Issue[]; onCreate: () => void;
 }) {
   return (
     <div style={{ padding: 24, overflowY: 'auto', flex: 1 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 16, fontWeight: 700 }}>Cycles (sprints)</h2>
-        <button onClick={onCreate} style={btnStyle('primary')}>+ Nieuwe cycle</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, alignItems: 'center' }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.2px' }}>Cycles</h2>
+        <button onClick={onCreate} style={btnStyle('primary')}>
+          <Icon name="plus" size={11} /> <span style={{ marginLeft: 4 }}>Nieuwe cycle</span>
+        </button>
       </div>
       {cycles.length === 0 && <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>Nog geen cycles. Maak er één om werk in sprint-blokken te plannen.</p>}
       {cycles.map(c => {
@@ -814,9 +861,10 @@ function CyclesView({ cycles, issues, onCreate, onChanged }: {
             borderRadius: 8, padding: 16, marginBottom: 12,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <Icon name="cycles" size={14} />
               <h3 style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>{c.name}</h3>
               <span style={{
-                fontSize: 10, padding: '2px 8px', borderRadius: 10,
+                fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px',
                 background: c.status === 'active' ? '#10B98122' : c.status === 'upcoming' ? '#8B5CF622' : '#6B728022',
                 color: c.status === 'active' ? '#10B981' : c.status === 'upcoming' ? '#8B5CF6' : '#6B7280',
               }}>{c.status}</span>
@@ -838,7 +886,7 @@ function CyclesView({ cycles, issues, onCreate, onChanged }: {
 function ActivityView({ items }: { items: Activity[] }) {
   return (
     <div style={{ padding: 24, overflowY: 'auto', flex: 1 }}>
-      <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Activity log</h2>
+      <h2 style={{ fontSize: 15, fontWeight: 700, marginBottom: 16, letterSpacing: '-0.2px' }}>Activity log</h2>
       {items.length === 0 && <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>Geen activiteit nog.</p>}
       {items.map(a => (
         <div key={a.id} style={{
@@ -846,7 +894,10 @@ function ActivityView({ items }: { items: Activity[] }) {
           borderLeft: `3px solid ${activityColor(a.type)}`, marginBottom: 4, fontSize: 12,
         }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ color: activityColor(a.type), fontWeight: 600 }}>{activityIcon(a.type)} {a.actor}</span>
+            <span style={{ color: activityColor(a.type), display: 'inline-flex' }}>
+              <Icon name={activityIcon(a.type)} size={12} />
+            </span>
+            <span style={{ fontWeight: 600 }}>{a.actor}</span>
             <span style={{ color: 'var(--text-muted)' }}>{describeActivity(a)}</span>
             <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-dim)' }}>
               {new Date(a.created_at).toLocaleString('nl-NL')}
@@ -870,7 +921,7 @@ function NewProjectModal({ onCreated, onClose }: { onCreated: () => void; onClos
   };
   return (
     <ModalOverlay onClose={onClose}>
-      <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Nieuw project</h3>
+      <h3 style={modalH()}>Nieuw project</h3>
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Project naam" autoFocus
         onKeyDown={e => { if (e.key === 'Enter') submit(); }}
         style={{ ...selectStyle(), width: '100%', marginBottom: 10 }}
@@ -881,7 +932,7 @@ function NewProjectModal({ onCreated, onClose }: { onCreated: () => void; onClos
       <div style={{ display: 'flex', gap: 6, margin: '12px 0' }}>
         {PROJECT_COLORS.map(c => (
           <button key={c} onClick={() => setColor(c)} style={{
-            width: 24, height: 24, borderRadius: '50%', background: c,
+            width: 22, height: 22, borderRadius: '50%', background: c,
             border: color === c ? '2px solid white' : '2px solid transparent', cursor: 'pointer',
           }} />
         ))}
@@ -909,7 +960,7 @@ function NewCycleModal({ onCreated, onClose }: { onCreated: () => void; onClose:
   };
   return (
     <ModalOverlay onClose={onClose}>
-      <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Nieuwe cycle</h3>
+      <h3 style={modalH()}>Nieuwe cycle</h3>
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Cycle naam (bv 'Week 21')" autoFocus
         style={{ ...selectStyle(), width: '100%', marginBottom: 10 }}
       />
@@ -930,7 +981,7 @@ function Field({ label, action, block, children }: { label: string; action?: Rea
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: block ? 16 : 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>{label}</span>
+        <span style={{ fontSize: 10, color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>{label}</span>
         {action && <div style={{ marginLeft: 'auto' }}>{action}</div>}
       </div>
       {children}
@@ -954,7 +1005,7 @@ function ModalOverlay({ onClose, children }: { onClose: () => void; children: Re
 // ── Styles ──
 function inputStyle(): React.CSSProperties {
   return {
-    flex: 1, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)',
+    flex: 1, padding: '5px 8px', borderRadius: 4, border: '1px solid var(--border)',
     background: 'var(--bg)', color: 'var(--text)', fontSize: 11,
   };
 }
@@ -976,14 +1027,30 @@ function btnStyle(variant: 'primary' | 'outline' | 'outline-sm' | 'danger'): Rea
   const base: React.CSSProperties = {
     padding: variant === 'outline-sm' ? '4px 8px' : '6px 12px',
     borderRadius: 6, fontSize: variant === 'outline-sm' ? 11 : 12, cursor: 'pointer',
-    fontWeight: 600,
+    fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   };
   if (variant === 'primary') return { ...base, border: 'none', background: 'var(--accent)', color: 'white' };
   if (variant === 'danger')  return { ...base, border: 'none', background: 'var(--red)', color: 'white' };
   return { ...base, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)' };
 }
 function iconBtnStyle(): React.CSSProperties {
-  return { background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 16 };
+  return {
+    background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer',
+    padding: 4, borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  };
+}
+function rowStyle(): React.CSSProperties {
+  return {
+    padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 6,
+    border: '1px solid var(--border)', marginBottom: 4, display: 'flex',
+    alignItems: 'center', gap: 8, fontSize: 12,
+  };
+}
+function monospaceStyle(): React.CSSProperties {
+  return { fontFamily: 'monospace', color: 'var(--text-dim)', fontSize: 11 };
+}
+function modalH(): React.CSSProperties {
+  return { fontSize: 15, fontWeight: 700, marginBottom: 14, letterSpacing: '-0.2px' };
 }
 
 // ── Helpers ──
@@ -991,33 +1058,38 @@ function fmtDate(s: string) {
   try { return new Date(s).toLocaleDateString('nl-NL', { month: 'short', day: 'numeric' }); }
   catch { return s; }
 }
+function assigneeIcon(author: string): IconName {
+  if (author === 'agent' || author.toLowerCase().includes('agent') || author.toLowerCase().includes('bot') || author.toLowerCase().includes('claude')) return 'agent';
+  return 'user';
+}
 function commentColor(author: string) {
   if (author === 'agent' || author.startsWith('agent')) return 'var(--accent)';
   if (author.startsWith('github')) return '#A78BFA';
   return 'var(--green)';
 }
-function commentIcon(author: string) {
-  if (author === 'agent' || author.startsWith('agent')) return '🤖';
-  if (author.startsWith('github')) return '🐙';
-  return '👤';
+function authorIcon(author: string): IconName {
+  if (author === 'agent' || author.startsWith('agent')) return 'agent';
+  if (author.startsWith('github')) return 'github';
+  return 'user';
 }
 function activityColor(type: string) {
   if (type.startsWith('pr_')) return '#A78BFA';
   if (type === 'status_changed') return '#F59E0B';
   if (type === 'comment_added') return '#10B981';
   if (type === 'issue_created') return '#8B5CF6';
+  if (type === 'branch_linked') return '#94A3B8';
   return '#6B7280';
 }
-function activityIcon(type: string) {
-  if (type.startsWith('pr_')) return '🔗';
-  if (type === 'status_changed') return '↻';
-  if (type === 'comment_added') return '💬';
-  if (type === 'issue_created') return '+';
-  if (type === 'priority_changed') return '⚡';
-  if (type === 'assignee_changed') return '👤';
-  if (type === 'branch_linked') return '🌿';
-  if (type === 'linked_issue_added') return '🔀';
-  return '·';
+function activityIcon(type: string): IconName {
+  if (type === 'pr_opened' || type === 'pr_linked' || type === 'pr_merged' || type === 'pr_closed' || type === 'pr_review_requested') return 'pr';
+  if (type === 'status_changed') return 'arrow_right';
+  if (type === 'comment_added') return 'comment';
+  if (type === 'issue_created') return 'plus';
+  if (type === 'priority_changed') return 'priority_high';
+  if (type === 'assignee_changed') return 'user';
+  if (type === 'branch_linked') return 'branch';
+  if (type === 'linked_issue_added') return 'link';
+  return 'activity';
 }
 function describeActivity(a: Activity): string {
   const p = a.payload || {};

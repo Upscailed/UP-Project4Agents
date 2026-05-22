@@ -238,11 +238,11 @@ function seedDefaults(db: Database.Database) {
   const haveView = (db.prepare("SELECT COUNT(*) as c FROM views").get() as any).c > 0;
   if (!haveView) {
     const defaults = [
-      { name: 'My active', icon: '◑', filter: { status: ['in_progress','in_review'] }, sort_order: 1 },
-      { name: 'Agent queue', icon: '🤖', filter: { assignee: 'agent', status: ['todo','in_progress'] }, sort_order: 2 },
-      { name: 'High priority backlog', icon: '↑', filter: { status: ['backlog','todo'], priority: ['urgent','high'] }, sort_order: 3 },
-      { name: 'Triage', icon: '⊙', filter: { status: ['triage'] }, sort_order: 4 },
-      { name: 'Recent done', icon: '●', filter: { status: ['done'] }, sort_order: 5 },
+      { name: 'My active',             icon: 'status_in_progress', filter: { status: ['in_progress','in_review'] }, sort_order: 1 },
+      { name: 'Agent queue',           icon: 'agent',              filter: { assignee: 'agent', status: ['todo','in_progress'] }, sort_order: 2 },
+      { name: 'High priority backlog', icon: 'priority_high',      filter: { status: ['backlog','todo'], priority: ['urgent','high'] }, sort_order: 3 },
+      { name: 'Triage',                icon: 'status_triage',      filter: { status: ['triage'] }, sort_order: 4 },
+      { name: 'Recent done',           icon: 'status_done',        filter: { status: ['done'] }, sort_order: 5 },
     ];
     const stmt = db.prepare(`INSERT INTO views (id, name, icon, filter, sort_order) VALUES (?, ?, ?, ?, ?)`);
     for (const v of defaults) stmt.run(uuidv4(), v.name, v.icon, JSON.stringify(v.filter), v.sort_order);
