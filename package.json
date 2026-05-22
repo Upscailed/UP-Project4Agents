@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3400",
     "build": "next build",
-    "start": "next start -p 3400",
-    "db:init": "node src/lib/db-init.js"
+    "start": "next start",
+    "db:init": "node scripts/db-init-api.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

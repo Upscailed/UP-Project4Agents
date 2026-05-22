@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ['better-sqlite3'],
+  // Geen externe Node-only packages meer nodig (postgres.js werkt in serverless)
 };
 
 module.exports = nextConfig;

@@ -338,7 +338,7 @@ export default function Board() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
               API: <code style={{ color: 'var(--accent)', background: 'var(--accent-glow)', padding: '2px 6px', borderRadius: 4 }}>
-                localhost:3400/api
+                /api
               </code>
             </div>
             {me && <UserMenu me={me} onLogout={async () => {
