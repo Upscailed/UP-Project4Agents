@@ -1,11 +1,16 @@
 {
   "mcpServers": {
     "project4agents": {
-      "command": "node",
-      "args": ["./scripts/mcp-server.mjs"],
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://up-project4agents.vercel.app/api/mcp",
+        "--header",
+        "Authorization:${P4A_AUTH}"
+      ],
       "env": {
-        "P4A_API": "http://localhost:3400/api",
-        "P4A_API_TOKEN": "${P4A_API_TOKEN}"
+        "P4A_AUTH": "Bearer ${P4A_API_TOKEN}"
       }
     }
   }
