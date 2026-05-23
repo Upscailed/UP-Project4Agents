@@ -69,6 +69,10 @@ scripts/
 .mcp.json             MCP config voor Claude Code
 ```
 
+## Changelog
+
+Zie [CHANGELOG.md](./CHANGELOG.md) — Keep-a-Changelog format.
+
 ## License
 
 MIT — gebruik wat je wil.
