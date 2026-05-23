@@ -7,6 +7,7 @@ Alle wijzigingen aan deze MCP-server volgens [Keep a Changelog](https://keepacha
 
 ### Changed
 - Forced redeploy 2026-05-22 om `list_issues` productie-bug te resetten (source was schoon, deploy stale).
+- Deploy-marker: redeploy getriggerd via Vercel auto-deploy op `main` push (2026-05-22).
 
 ## [1.0.0] — 2026-05-22
 
